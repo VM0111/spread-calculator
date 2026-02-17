@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots # <--- NOWY IMPORT do wykresu z dwiema osiami
 
 # 1. ZASZYTA NA SZTYWNO DYSTRYBUCJA WOLUMENU
 @st.cache_data
@@ -46,7 +47,7 @@ def load_default_order_book():
         "Spread": [31.0, 42.0, 57.0, 84.0, 115.0, 164.0, 247.0]
     })
 
-# 3. GŁÓWNA LOGIKA OBLICZENIOWA (Bez zmian)
+# 3. GŁÓWNA LOGIKA OBLICZENIOWA
 def calculate_per_bucket_revenue(order_book, volume_distribution):
     ob = order_book.copy()
     ob['Ask Size'] = pd.to_numeric(ob['Ask Size'], errors='coerce')
@@ -93,79 +94,138 @@ st.write("Porównaj dwa różne scenariusze płynności w Order Booku na tych sa
 vol_dist_df = load_volume_distribution()
 default_ob_df = load_default_order_book()
 
+TABLE_HEIGHT = 350
+
 # --- PIĘTRO 1: SCENARIUSZ A ---
 st.header("🔴 Scenariusz A")
 colA1, colA2 = st.columns([1, 2])
 
 with colA1:
-    st.caption("Edytuj Order Book A")
-    # Zwróć uwagę na unikalny key="ob_a", żeby Streamlit nie pomieszał tabelek
-    edited_ob_a = st.data_editor(default_ob_df.copy(), num_rows="dynamic", use_container_width=True, hide_index=True, key="ob_a")
+    st.markdown("**Edytuj Order Book A**")
+    edited_ob_a = st.data_editor(
+        default_ob_df.copy(), 
+        num_rows="dynamic", 
+        use_container_width=True, 
+        hide_index=True, 
+        key="ob_a",
+        height=TABLE_HEIGHT
+    )
+
+results_a = calculate_per_bucket_revenue(edited_ob_a, vol_dist_df)
+total_rev_a = results_a['Revenue_USD'].sum()
 
 with colA2:
-    results_a = calculate_per_bucket_revenue(edited_ob_a, vol_dist_df)
-    total_rev_a = results_a['Revenue_USD'].sum()
-    st.metric(label="Total Revenue A (USD)", value=f"${total_rev_a:,.2f}")
-    # Pokazujemy tylko kilka wierszy w podglądzie, żeby nie wydłużać strony (użytkownik może scrollować)
-    st.dataframe(results_a, use_container_width=True, hide_index=True, height=200)
+    st.markdown(f"**Wyniki A** &mdash; Total Revenue: <span style='color:#EF553B; font-size:1.1em'>**${total_rev_a:,.2f}**</span>", unsafe_allow_html=True)
+    st.dataframe(results_a, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
 
-st.divider() # Szara linia oddzielająca
+st.divider() 
 
 # --- PIĘTRO 2: SCENARIUSZ B ---
 st.header("🔵 Scenariusz B")
 colB1, colB2 = st.columns([1, 2])
 
 with colB1:
-    st.caption("Edytuj Order Book B")
-    # Jako domyślny wrzucamy kopię, można sobie go zmienić
-    edited_ob_b = st.data_editor(default_ob_df.copy(), num_rows="dynamic", use_container_width=True, hide_index=True, key="ob_b")
+    st.markdown("**Edytuj Order Book B**")
+    edited_ob_b = st.data_editor(
+        default_ob_df.copy(), 
+        num_rows="dynamic", 
+        use_container_width=True, 
+        hide_index=True, 
+        key="ob_b",
+        height=TABLE_HEIGHT
+    )
+
+results_b = calculate_per_bucket_revenue(edited_ob_b, vol_dist_df)
+total_rev_b = results_b['Revenue_USD'].sum()
+diff_vs_a = total_rev_b - total_rev_a
+
+diff_color = "#00CC96" if diff_vs_a >= 0 else "#EF553B"
+diff_sign = "+" if diff_vs_a >= 0 else ""
 
 with colB2:
-    results_b = calculate_per_bucket_revenue(edited_ob_b, vol_dist_df)
-    total_rev_b = results_b['Revenue_USD'].sum()
-    
-    # Liczymy różnicę do ładnego wyświetlenia
-    diff_vs_a = total_rev_b - total_rev_a
-    st.metric(label="Total Revenue B (USD)", value=f"${total_rev_b:,.2f}", delta=f"{diff_vs_a:,.2f} vs Scenariusz A")
-    st.dataframe(results_b, use_container_width=True, hide_index=True, height=200)
+    st.markdown(f"**Wyniki B** &mdash; Total Revenue: <span style='color:#00CC96; font-size:1.1em'>**${total_rev_b:,.2f}**</span> <span style='color:{diff_color}; font-size:0.9em'>({diff_sign}${diff_vs_a:,.2f} vs A)</span>", unsafe_allow_html=True)
+    st.dataframe(results_b, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
 
 st.divider()
 
-# --- PARTER: INTERAKTYWNY WYKRES PORÓWNAWCZY ---
-st.header("📈 Porównanie Przychodów (Revenue per Bucket)")
+# --- WYLICZENIE RÓŻNICY % DO WYKRESU ---
+# Dodajemy nową kolumnę z różnicą procentową do tabeli wyników B, 
+# zabezpieczając się przed dzieleniem przez zero.
+pct_diff_list = []
+for rev_a, rev_b in zip(results_a['Revenue_USD'], results_b['Revenue_USD']):
+    if rev_a > 0:
+        pct = ((rev_b - rev_a) / rev_a) * 100
+    elif rev_a == 0 and rev_b > 0:
+        pct = 100.0  # Jeśli A miało 0, a B coś zarobiło
+    else:
+        pct = 0.0
+    pct_diff_list.append(pct)
 
-# Tworzenie wykresu z biblioteki Plotly
-fig = go.Figure()
+results_b['Pct_Diff'] = pct_diff_list
 
-# Dodajemy słupki dla Scenariusza A (Kolor: Czerwony/Koralowy)
-fig.add_trace(go.Bar(
-    x=results_a['Volume_Bucket'],
-    y=results_a['Revenue_USD'],
-    name='Scenariusz A',
-    marker_color='#EF553B' 
-))
+# --- PARTER: INTERAKTYWNY WYKRES PORÓWNAWCZY (Z LINIĄ %) ---
+st.header("📈 Porównanie Przychodów (z różnicą %)")
 
-# Dodajemy słupki dla Scenariusza B (Kolor: Niebieski)
-fig.add_trace(go.Bar(
-    x=results_b['Volume_Bucket'],
-    y=results_b['Revenue_USD'],
-    name='Scenariusz B',
-    marker_color='#00CC96'
-))
+# Tworzymy wykres z dwiema osiami (podwójna oś Y)
+fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-# Ustawienia wyglądu wykresu
-fig.update_layout(
-    barmode='group', # Słupki stoją obok siebie (zgrupowane)
-    xaxis_title='Przedział Wolumenu (Volume Bucket)',
-    yaxis_title='Przychód (USD)',
-    hovermode="x unified", # Super funkcja: jak najedziesz myszką, pokazuje dane z obu słupków naraz w jednej chmurce!
-    margin=dict(l=0, r=0, t=30, b=0)
+# 1. Słupki - Scenariusz A (podpięte pod lewą oś Y)
+fig.add_trace(
+    go.Bar(
+        x=results_a['Volume_Bucket'],
+        y=results_a['Revenue_USD'],
+        name='Scenariusz A (USD)',
+        marker_color='#EF553B' 
+    ),
+    secondary_y=False,
 )
 
-# Wyświetlenie wykresu na cały ekran
+# 2. Słupki - Scenariusz B (podpięte pod lewą oś Y)
+fig.add_trace(
+    go.Bar(
+        x=results_b['Volume_Bucket'],
+        y=results_b['Revenue_USD'],
+        name='Scenariusz B (USD)',
+        marker_color='#00CC96'
+    ),
+    secondary_y=False,
+)
+
+# 3. Linia z kropkami - Różnica Procentowa (podpięta pod prawą oś Y)
+fig.add_trace(
+    go.Scatter(
+        x=results_b['Volume_Bucket'],
+        y=results_b['Pct_Diff'],
+        name='Różnica B vs A (%)',
+        mode='lines+markers',
+        marker_color='#FFA15A', # Pomarańczowy, żeby ładnie kontrastował
+        line=dict(width=3, dash='dot') # Przerywana grubsza linia
+    ),
+    secondary_y=True,
+)
+
+# Konfiguracja wyglądu wykresu
+fig.update_layout(
+    barmode='group', 
+    xaxis_title='Przedział Wolumenu (Volume Bucket)',
+    hovermode="x unified",
+    margin=dict(l=0, r=0, t=40, b=0),
+    legend=dict(
+        orientation="h", # Pozioma legenda nad wykresem
+        yanchor="bottom",
+        y=1.02,
+        xanchor="right",
+        x=1
+    )
+)
+
+# Opisy dla lewej i prawej osi Y
+fig.update_yaxes(title_text="Przychód (USD)", secondary_y=False)
+fig.update_yaxes(title_text="Zmiana (%)", secondary_y=True, showgrid=False, tickformat=".1f", ticksuffix="%")
+
 st.plotly_chart(fig, use_container_width=True)
 
-# Przycisk pobierania na samym dole (łączy oba scenariusze w jeden plik Excel)
+# Pobieranie wyników
 st.write("---")
 output = io.BytesIO()
 with pd.ExcelWriter(output, engine='openpyxl') as writer:
