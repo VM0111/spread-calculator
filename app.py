@@ -37,9 +37,9 @@ if not check_password():
 @st.cache_data
 def load_distributions():
     try:
-        df_Futuress = pd.read_csv("Futuress_distribution.csv")
+        df_futures = pd.read_csv("futures_distribution.csv")
         df_spot = pd.read_csv("spot_distribution.csv")
-        return df_Futuress, df_spot
+        return df_futures, df_spot
     except Exception as e:
         st.error(f"Nie znaleziono plików dystrybucji lub wystąpił błąd. Błąd: {e}")
         return pd.DataFrame(), pd.DataFrame()
@@ -198,21 +198,21 @@ def render_dashboard(vol_dist_df, tab_name):
 st.title("📊 A/B Spread & Revenue Calculator")
 st.write("Wybierz rynek z zakładek poniżej, aby porównać scenariusze na odpowiednich wolumenach.")
 
-df_Futuress, df_spot = load_distributions()
+df_futures, df_spot = load_distributions()
 
 # Jeśli pliki zostały poprawnie załadowane, budujemy zakładki
-if not df_Futuress.empty and not df_spot.empty:
+if not df_futures.empty and not df_spot.empty:
     
     # Tworzenie dwóch zakładek na samej górze
-    tab_Futures, tab_spot = st.tabs(["Futuress", "Spot"])
+    tab_future, tab_spot = st.tabs(["📈 Rynek: Future", "📉 Rynek: Spot"])
 
     # Wrzucenie całej logiki (tabel, wykresów) do pierwszej zakładki
-    with tab_Futures:
-        render_dashboard(df_Futuress, "Futuress")
+    with tab_future:
+        render_dashboard(df_futures, "Future")
 
     # Wrzucenie całej logiki do drugiej zakładki
     with tab_spot:
         render_dashboard(df_spot, "Spot")
         
 else:
-    st.warning("Oczekuję na pliki. Upewnij się, że wgrałeś `Futuress_distribution.csv` oraz `spot_distribution.csv`.")
+    st.warning("Oczekuję na pliki. Upewnij się, że wgrałeś `futures_distribution.csv` oraz `spot_distribution.csv`.")
