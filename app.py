@@ -12,7 +12,7 @@ st.set_page_config(page_title="A/B Spread Revenue Calculator", layout="wide")
 def check_password():
     """Zwraca True jeśli hasło jest poprawne."""
     def password_entered():
-        # ZMIEŃ HASŁO W LINIJCE PONIŻEJ (teraz to "Stop_Out")
+        # HASŁO USTAWIONE NA: Stop_Out
         if st.session_state["password"] == "Stop_Out":
             st.session_state["password_correct"] = True
             del st.session_state["password"]  # Usuwamy hasło z pamięci ze względów bezpieczeństwa
@@ -32,17 +32,16 @@ if not check_password():
     st.stop()  # Zatrzymuje aplikację tutaj, jeśli hasło nie zostało podane poprawnie
 
 # ==========================================
-# 2. ŁADOWANIE DANYCH (CSV zamiast sztywnych list)
+# 2. ŁADOWANIE DANYCH (CSV)
 # ==========================================
 @st.cache_data
 def load_distributions():
     try:
-        # Aplikacja zaciągnie teraz pliki bezpośrednio z GitHuba
         df_futures = pd.read_csv("futures_distribution.csv")
         df_spot = pd.read_csv("spot_distribution.csv")
         return df_futures, df_spot
     except Exception as e:
-        st.error(f"Nie znaleziono plików dystrybucji (futures_distribution.csv lub spot_distribution.csv). Upewnij się, że wgrałeś je na GitHuba! Błąd: {e}")
+        st.error(f"Nie znaleziono plików dystrybucji lub wystąpił błąd. Błąd: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 @st.cache_data
@@ -106,7 +105,7 @@ def render_dashboard(vol_dist_df, tab_name):
             num_rows="dynamic", 
             use_container_width=True, 
             hide_index=True, 
-            key=f"ob_a_{tab_name}", # Unikalny klucz dla każdej zakładki
+            key=f"ob_a_{tab_name}",
             height=TABLE_HEIGHT
         )
         
@@ -124,7 +123,7 @@ def render_dashboard(vol_dist_df, tab_name):
             num_rows="dynamic", 
             use_container_width=True, 
             hide_index=True, 
-            key=f"ob_b_{tab_name}", # Unikalny klucz dla każdej zakładki
+            key=f"ob_b_{tab_name}",
             height=TABLE_HEIGHT
         )
         
