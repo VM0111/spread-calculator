@@ -37,9 +37,9 @@ if not check_password():
 @st.cache_data
 def load_distributions():
     try:
-        df_futures = pd.read_csv("futures_distribution.csv")
+        df_Futuress = pd.read_csv("Futuress_distribution.csv")
         df_spot = pd.read_csv("spot_distribution.csv")
-        return df_futures, df_spot
+        return df_Futuress, df_spot
     except Exception as e:
         st.error(f"Nie znaleziono plików dystrybucji lub wystąpił błąd. Błąd: {e}")
         return pd.DataFrame(), pd.DataFrame()
@@ -112,7 +112,8 @@ def render_dashboard(vol_dist_df, tab_name):
         results_a = calculate_per_bucket_revenue(edited_ob_a, vol_dist_df)
         total_rev_a = results_a['Revenue_USD'].sum()
         
-        st.markdown(f"**2. Wyniki A** &mdash; Total Revenue: <span style='color:#EF553B; font-size:1.1em'>**${total_rev_a:,.2f}**</span>", unsafe_allow_html=True)
+        # POPRAWIONA LINIJKA A (Czysty HTML)
+        st.markdown(f"**2. Wyniki A** &mdash; Total Revenue: <span style='color:#EF553B; font-size:1.1em; font-weight:bold;'>${total_rev_a:,.2f}</span>", unsafe_allow_html=True)
         st.dataframe(results_a, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
 
     with col_right:
@@ -134,7 +135,8 @@ def render_dashboard(vol_dist_df, tab_name):
         diff_color = "#00CC96" if diff_vs_a >= 0 else "#EF553B"
         diff_sign = "+" if diff_vs_a >= 0 else ""
         
-        st.markdown(f"**2. Wyniki B** &mdash; Total Revenue: <span style='color:#00CC96; font-size:1.1em'>**${total_rev_b:,.2f}**</span> <span style='color:{diff_color}; font-size:0.9em'>({diff_sign}${diff_vs_a:,.2f} vs A)</span>", unsafe_allow_html=True)
+        # POPRAWIONA LINIJKA B (Czysty HTML)
+        st.markdown(f"**2. Wyniki B** &mdash; Total Revenue: <span style='color:#00CC96; font-size:1.1em; font-weight:bold;'>${total_rev_b:,.2f}</span> <span style='color:{diff_color}; font-size:0.9em; font-weight:bold;'>({diff_sign}${diff_vs_a:,.2f} vs A)</span>", unsafe_allow_html=True)
         st.dataframe(results_b, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
 
     st.divider()
@@ -196,21 +198,21 @@ def render_dashboard(vol_dist_df, tab_name):
 st.title("📊 A/B Spread & Revenue Calculator")
 st.write("Wybierz rynek z zakładek poniżej, aby porównać scenariusze na odpowiednich wolumenach.")
 
-df_futures, df_spot = load_distributions()
+df_Futuress, df_spot = load_distributions()
 
 # Jeśli pliki zostały poprawnie załadowane, budujemy zakładki
-if not df_futures.empty and not df_spot.empty:
+if not df_Futuress.empty and not df_spot.empty:
     
     # Tworzenie dwóch zakładek na samej górze
-    tab_future, tab_spot = st.tabs(["📈 Rynek: Future", "📉 Rynek: Spot"])
+    tab_Futures, tab_spot = st.tabs(["Futuress", "Spot"])
 
     # Wrzucenie całej logiki (tabel, wykresów) do pierwszej zakładki
-    with tab_future:
-        render_dashboard(df_futures, "Future")
+    with tab_Futures:
+        render_dashboard(df_Futuress, "Futuress")
 
     # Wrzucenie całej logiki do drugiej zakładki
     with tab_spot:
         render_dashboard(df_spot, "Spot")
         
 else:
-    st.warning("Oczekuję na pliki. Upewnij się, że wgrałeś `futures_distribution.csv` oraz `spot_distribution.csv`.")
+    st.warning("Oczekuję na pliki. Upewnij się, że wgrałeś `Futuress_distribution.csv` oraz `spot_distribution.csv`.")
