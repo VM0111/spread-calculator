@@ -1,8 +1,0 @@
-# .streamlit/secrets.toml
-# ============================================================
-# WAŻNE: Ten plik NIGDY nie powinien trafiać do repozytorium!
-# Dodaj go do .gitignore:  echo ".streamlit/secrets.toml" >> .gitignore
-# ============================================================
-
-# Hasło do aplikacji A/B Spread Revenue Calculator
-APP_PASSWORD = "Stop_Out"
