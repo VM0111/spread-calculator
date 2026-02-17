@@ -112,8 +112,8 @@ def render_dashboard(vol_dist_df, tab_name):
         results_a = calculate_per_bucket_revenue(edited_ob_a, vol_dist_df)
         total_rev_a = results_a['Revenue_USD'].sum()
         
-        # POPRAWIONA LINIJKA A (Czysty HTML)
-        st.markdown(f"**2. Wyniki A** &mdash; Total Revenue: <span style='color:#EF553B; font-size:1.1em; font-weight:bold;'>${total_rev_a:,.2f}</span>", unsafe_allow_html=True)
+        # PANCERNY HTML DLA WYNIKÓW A (Zero Markdownu)
+        st.markdown(f"<div style='margin-bottom: 0.5rem;'><b>2. Wyniki A</b> &mdash; Total Revenue: <span style='color:#EF553B; font-size:1.1em; font-weight:bold;'>${total_rev_a:,.2f}</span></div>", unsafe_allow_html=True)
         st.dataframe(results_a, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
 
     with col_right:
@@ -135,8 +135,8 @@ def render_dashboard(vol_dist_df, tab_name):
         diff_color = "#00CC96" if diff_vs_a >= 0 else "#EF553B"
         diff_sign = "+" if diff_vs_a >= 0 else ""
         
-        # POPRAWIONA LINIJKA B (Czysty HTML)
-        st.markdown(f"**2. Wyniki B** &mdash; Total Revenue: <span style='color:#00CC96; font-size:1.1em; font-weight:bold;'>${total_rev_b:,.2f}</span> <span style='color:{diff_color}; font-size:0.9em; font-weight:bold;'>({diff_sign}${diff_vs_a:,.2f} vs A)</span>", unsafe_allow_html=True)
+        # PANCERNY HTML DLA WYNIKÓW B (Zero Markdownu)
+        st.markdown(f"<div style='margin-bottom: 0.5rem;'><b>2. Wyniki B</b> &mdash; Total Revenue: <span style='color:#00CC96; font-size:1.1em; font-weight:bold;'>${total_rev_b:,.2f}</span> <span style='color:{diff_color}; font-size:0.9em; font-weight:bold;'>({diff_sign}${diff_vs_a:,.2f} vs A)</span></div>", unsafe_allow_html=True)
         st.dataframe(results_b, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
 
     st.divider()
@@ -203,12 +203,12 @@ df_futures, df_spot = load_distributions()
 # Jeśli pliki zostały poprawnie załadowane, budujemy zakładki
 if not df_futures.empty and not df_spot.empty:
     
-    # Tworzenie dwóch zakładek na samej górze
-    tab_future, tab_spot = st.tabs(["📈 Rynek: Future", "📉 Rynek: Spot"])
+    # Tworzenie dwóch zakładek na samej górze z poprawną nazwą
+    tab_future, tab_spot = st.tabs(["📈 Rynek: Futures", "📉 Rynek: Spot"])
 
     # Wrzucenie całej logiki (tabel, wykresów) do pierwszej zakładki
     with tab_future:
-        render_dashboard(df_futures, "Future")
+        render_dashboard(df_futures, "Futures")
 
     # Wrzucenie całej logiki do drugiej zakładki
     with tab_spot:
