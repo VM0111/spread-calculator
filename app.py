@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 import io
+import plotly.graph_objects as go
 
 # 1. ZASZYTA NA SZTYWNO DYSTRYBUCJA WOLUMENU
-# Skopiowana dokładnie z Twojego pliku Volume_Distribution.csv
 @st.cache_data
 def load_volume_distribution():
     data = [
@@ -36,7 +36,7 @@ def load_volume_distribution():
     ]
     return pd.DataFrame(data)
 
-# 2. DOMYŚLNY ORDER BOOK (Do edycji przez użytkownika)
+# 2. DOMYŚLNY ORDER BOOK
 @st.cache_data
 def load_default_order_book():
     return pd.DataFrame({
@@ -46,7 +46,7 @@ def load_default_order_book():
         "Spread": [31.0, 42.0, 57.0, 84.0, 115.0, 164.0, 247.0]
     })
 
-# 3. GŁÓWNA LOGIKA OBLICZENIOWA (Ta sama co wcześniej)
+# 3. GŁÓWNA LOGIKA OBLICZENIOWA (Bez zmian)
 def calculate_per_bucket_revenue(order_book, volume_distribution):
     ob = order_book.copy()
     ob['Ask Size'] = pd.to_numeric(ob['Ask Size'], errors='coerce')
@@ -85,51 +85,97 @@ def calculate_per_bucket_revenue(order_book, volume_distribution):
 # ==========================================
 # INTERFEJS APLIKACJI WEBOWEJ
 # ==========================================
-st.set_page_config(page_title="Spread Revenue Calculator", layout="wide")
+st.set_page_config(page_title="A/B Spread Revenue Calculator", layout="wide")
 
-st.title("📊 Spread & Revenue Calculator")
-st.write("Skonfiguruj płynność w arkuszu (Order Book), aby zobaczyć, jak wpłynie to na przychody z historycznych wolumenów.")
+st.title("📊 A/B Spread & Revenue Calculator")
+st.write("Porównaj dwa różne scenariusze płynności w Order Booku na tych samych wolumenach historycznych.")
 
-# Wczytanie danych
 vol_dist_df = load_volume_distribution()
 default_ob_df = load_default_order_book()
 
-col1, col2 = st.columns([1, 2])
+# --- PIĘTRO 1: SCENARIUSZ A ---
+st.header("🔴 Scenariusz A")
+colA1, colA2 = st.columns([1, 2])
 
-with col1:
-    st.subheader("1. Edytuj Order Book")
-    st.info("Zmień wartości 'Ask Size' lub 'Spread' w tabeli poniżej. Zmiany przeliczą się automatycznie.")
-    
-    # INTERAKTYWNA TABELA - Tutaj dzieje się magia
-    edited_ob_df = st.data_editor(
-        default_ob_df,
-        num_rows="dynamic", # Pozwala na dodawanie nowych wierszy!
-        use_container_width=True,
-        hide_index=True
-    )
+with colA1:
+    st.caption("Edytuj Order Book A")
+    # Zwróć uwagę na unikalny key="ob_a", żeby Streamlit nie pomieszał tabelek
+    edited_ob_a = st.data_editor(default_ob_df.copy(), num_rows="dynamic", use_container_width=True, hide_index=True, key="ob_a")
 
-with col2:
-    st.subheader("2. Wyniki (Per-Bucket Revenue)")
+with colA2:
+    results_a = calculate_per_bucket_revenue(edited_ob_a, vol_dist_df)
+    total_rev_a = results_a['Revenue_USD'].sum()
+    st.metric(label="Total Revenue A (USD)", value=f"${total_rev_a:,.2f}")
+    # Pokazujemy tylko kilka wierszy w podglądzie, żeby nie wydłużać strony (użytkownik może scrollować)
+    st.dataframe(results_a, use_container_width=True, hide_index=True, height=200)
+
+st.divider() # Szara linia oddzielająca
+
+# --- PIĘTRO 2: SCENARIUSZ B ---
+st.header("🔵 Scenariusz B")
+colB1, colB2 = st.columns([1, 2])
+
+with colB1:
+    st.caption("Edytuj Order Book B")
+    # Jako domyślny wrzucamy kopię, można sobie go zmienić
+    edited_ob_b = st.data_editor(default_ob_df.copy(), num_rows="dynamic", use_container_width=True, hide_index=True, key="ob_b")
+
+with colB2:
+    results_b = calculate_per_bucket_revenue(edited_ob_b, vol_dist_df)
+    total_rev_b = results_b['Revenue_USD'].sum()
     
-    # Wywołanie kalkulacji na żywo z edytowanego Order Booka
-    results_df = calculate_per_bucket_revenue(edited_ob_df, vol_dist_df)
-    total_revenue = results_df['Revenue_USD'].sum()
-    
-    # Wyświetlanie łącznego zarobku na ładnym kafelku
-    st.metric(label="Total Revenue (USD)", value=f"${total_revenue:,.2f}")
-    
-    # Tabela z wynikami
-    st.dataframe(results_df, use_container_width=True, hide_index=True)
-    
-    # Generowanie pliku Excel do pobrania (w pamięci, bez zapisywania na dysku)
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        results_df.to_excel(writer, sheet_name='Per-Bucket Revenue', index=False)
-    output.seek(0)
-    
-    st.download_button(
-        label="📥 Pobierz wyniki jako Excel",
-        data=output,
-        file_name="final_calculations.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    # Liczymy różnicę do ładnego wyświetlenia
+    diff_vs_a = total_rev_b - total_rev_a
+    st.metric(label="Total Revenue B (USD)", value=f"${total_rev_b:,.2f}", delta=f"{diff_vs_a:,.2f} vs Scenariusz A")
+    st.dataframe(results_b, use_container_width=True, hide_index=True, height=200)
+
+st.divider()
+
+# --- PARTER: INTERAKTYWNY WYKRES PORÓWNAWCZY ---
+st.header("📈 Porównanie Przychodów (Revenue per Bucket)")
+
+# Tworzenie wykresu z biblioteki Plotly
+fig = go.Figure()
+
+# Dodajemy słupki dla Scenariusza A (Kolor: Czerwony/Koralowy)
+fig.add_trace(go.Bar(
+    x=results_a['Volume_Bucket'],
+    y=results_a['Revenue_USD'],
+    name='Scenariusz A',
+    marker_color='#EF553B' 
+))
+
+# Dodajemy słupki dla Scenariusza B (Kolor: Niebieski)
+fig.add_trace(go.Bar(
+    x=results_b['Volume_Bucket'],
+    y=results_b['Revenue_USD'],
+    name='Scenariusz B',
+    marker_color='#00CC96'
+))
+
+# Ustawienia wyglądu wykresu
+fig.update_layout(
+    barmode='group', # Słupki stoją obok siebie (zgrupowane)
+    xaxis_title='Przedział Wolumenu (Volume Bucket)',
+    yaxis_title='Przychód (USD)',
+    hovermode="x unified", # Super funkcja: jak najedziesz myszką, pokazuje dane z obu słupków naraz w jednej chmurce!
+    margin=dict(l=0, r=0, t=30, b=0)
+)
+
+# Wyświetlenie wykresu na cały ekran
+st.plotly_chart(fig, use_container_width=True)
+
+# Przycisk pobierania na samym dole (łączy oba scenariusze w jeden plik Excel)
+st.write("---")
+output = io.BytesIO()
+with pd.ExcelWriter(output, engine='openpyxl') as writer:
+    results_a.to_excel(writer, sheet_name='Scenariusz A', index=False)
+    results_b.to_excel(writer, sheet_name='Scenariusz B', index=False)
+output.seek(0)
+
+st.download_button(
+    label="📥 Pobierz wyniki obu scenariuszy jako Excel",
+    data=output,
+    file_name="symulacja_ab_revenue.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
