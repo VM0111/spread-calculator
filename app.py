@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # 1. ZASZYTA NA SZTYWNO DYSTRYBUCJA WOLUMENU
 @st.cache_data
@@ -93,9 +94,10 @@ st.write("Porównaj dwa różne scenariusze płynności w Order Booku na tych sa
 vol_dist_df = load_volume_distribution()
 default_ob_df = load_default_order_book()
 
+# Ustawiamy wysokość, żeby edytor i wyniki ładnie mieściły się jedne pod drugimi
 TABLE_HEIGHT = 300 
 
-# DZIELIMY GŁÓWNY EKRAN NA PÓŁ 
+# DZIELIMY EKRAN NA PÓŁ (Lewa strona A, Prawa strona B)
 col_left, col_right = st.columns(2)
 
 # ==========================================
@@ -104,6 +106,7 @@ col_left, col_right = st.columns(2)
 with col_left:
     st.header("🔴 Scenariusz A")
     
+    # 1. Edytor Order Booka
     st.markdown("**1. Edytuj Order Book A**")
     edited_ob_a = st.data_editor(
         default_ob_df.copy(), 
@@ -114,9 +117,11 @@ with col_left:
         height=TABLE_HEIGHT
     )
     
+    # Przeliczenie dla A
     results_a = calculate_per_bucket_revenue(edited_ob_a, vol_dist_df)
     total_rev_a = results_a['Revenue_USD'].sum()
     
+    # 2. Tabela z wynikami
     st.markdown(f"**2. Wyniki A** &mdash; Total Revenue: <span style='color:#EF553B; font-size:1.1em'>**${total_rev_a:,.2f}**</span>", unsafe_allow_html=True)
     st.dataframe(results_a, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
 
@@ -126,6 +131,7 @@ with col_left:
 with col_right:
     st.header("🔵 Scenariusz B")
     
+    # 1. Edytor Order Booka
     st.markdown("**1. Edytuj Order Book B**")
     edited_ob_b = st.data_editor(
         default_ob_df.copy(), 
@@ -136,6 +142,7 @@ with col_right:
         height=TABLE_HEIGHT
     )
     
+    # Przeliczenie dla B
     results_b = calculate_per_bucket_revenue(edited_ob_b, vol_dist_df)
     total_rev_b = results_b['Revenue_USD'].sum()
     diff_vs_a = total_rev_b - total_rev_a
@@ -143,64 +150,86 @@ with col_right:
     diff_color = "#00CC96" if diff_vs_a >= 0 else "#EF553B"
     diff_sign = "+" if diff_vs_a >= 0 else ""
     
+    # 2. Tabela z wynikami
     st.markdown(f"**2. Wyniki B** &mdash; Total Revenue: <span style='color:#00CC96; font-size:1.1em'>**${total_rev_b:,.2f}**</span> <span style='color:{diff_color}; font-size:0.9em'>({diff_sign}${diff_vs_a:,.2f} vs A)</span>", unsafe_allow_html=True)
     st.dataframe(results_b, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
 
 st.divider()
 
 # ==========================================
-# WYKRESY NA DOLE (Również podzielone na pół)
+# OBLICZENIA PROCENTOWE DO WYKRESU
 # ==========================================
-col_chart_left, col_chart_right = st.columns(2)
+pct_diff_list = []
+for rev_a, rev_b in zip(results_a['Revenue_USD'], results_b['Revenue_USD']):
+    if rev_a > 0:
+        pct = ((rev_b - rev_a) / rev_a) * 100
+    elif rev_a == 0 and rev_b > 0:
+        pct = 100.0  
+    else:
+        pct = 0.0
+    pct_diff_list.append(pct)
 
-with col_chart_left:
-    st.subheader("📊 Porównanie: Słupki (Bar Chart)")
-    
-    fig_bar = go.Figure()
-    fig_bar.add_trace(go.Bar(
-        x=results_a['Volume_Bucket'], y=results_a['Revenue_USD'],
-        name='Scenariusz A', marker_color='#EF553B' 
-    ))
-    fig_bar.add_trace(go.Bar(
-        x=results_b['Volume_Bucket'], y=results_b['Revenue_USD'],
-        name='Scenariusz B', marker_color='#00CC96'
-    ))
-    fig_bar.update_layout(
-        barmode='group', 
-        xaxis_title='Przedział Wolumenu',
-        yaxis_title='Przychód (USD)',
-        hovermode="x unified",
-        margin=dict(l=0, r=0, t=30, b=0),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+results_b['Pct_Diff'] = pct_diff_list
+
+# ==========================================
+# WYKRES: PARTER
+# ==========================================
+st.header("📈 Porównanie Przychodów (z różnicą %)")
+
+fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+fig.add_trace(
+    go.Bar(
+        x=results_a['Volume_Bucket'],
+        y=results_a['Revenue_USD'],
+        name='Scenariusz A (USD)',
+        marker_color='#EF553B' 
+    ),
+    secondary_y=False,
+)
+
+fig.add_trace(
+    go.Bar(
+        x=results_b['Volume_Bucket'],
+        y=results_b['Revenue_USD'],
+        name='Scenariusz B (USD)',
+        marker_color='#00CC96'
+    ),
+    secondary_y=False,
+)
+
+fig.add_trace(
+    go.Scatter(
+        x=results_b['Volume_Bucket'],
+        y=results_b['Pct_Diff'],
+        name='Różnica B vs A (%)',
+        mode='lines+markers',
+        marker_color='#FFA15A', 
+        line=dict(width=3, dash='dot') 
+    ),
+    secondary_y=True,
+)
+
+fig.update_layout(
+    barmode='group', 
+    xaxis_title='Przedział Wolumenu (Volume Bucket)',
+    hovermode="x unified",
+    margin=dict(l=0, r=0, t=40, b=0),
+    legend=dict(
+        orientation="h", 
+        yanchor="bottom",
+        y=1.02,
+        xanchor="right",
+        x=1
     )
-    st.plotly_chart(fig_bar, use_container_width=True)
+)
 
-with col_chart_right:
-    st.subheader("📈 Trend Przychodów: Linie (Line Chart)")
-    
-    fig_line = go.Figure()
-    fig_line.add_trace(go.Scatter(
-        x=results_a['Volume_Bucket'], y=results_a['Revenue_USD'],
-        name='Scenariusz A', mode='lines+markers', marker_color='#EF553B',
-        line=dict(width=3)
-    ))
-    fig_line.add_trace(go.Scatter(
-        x=results_b['Volume_Bucket'], y=results_b['Revenue_USD'],
-        name='Scenariusz B', mode='lines+markers', marker_color='#00CC96',
-        line=dict(width=3)
-    ))
-    fig_line.update_layout(
-        xaxis_title='Przedział Wolumenu',
-        yaxis_title='Przychód (USD)',
-        hovermode="x unified",
-        margin=dict(l=0, r=0, t=30, b=0),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
-    st.plotly_chart(fig_line, use_container_width=True)
+fig.update_yaxes(title_text="Przychód (USD)", secondary_y=False)
+fig.update_yaxes(title_text="Zmiana (%)", secondary_y=True, showgrid=False, tickformat=".1f", ticksuffix="%")
 
-# ==========================================
-# POBIERANIE WYNIKÓW
-# ==========================================
+st.plotly_chart(fig, use_container_width=True)
+
+# Przycisk pobierania Excela
 st.write("---")
 output = io.BytesIO()
 with pd.ExcelWriter(output, engine='openpyxl') as writer:
