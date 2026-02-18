@@ -512,52 +512,119 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
 # 6. INSTRUKCJA
 # ==========================================
 def render_instruction_tab() -> None:
-    st.header("Jak korzystać z tego kalkulatora?")
+    st.header("Metodologia i opis kalkulatora")
 
     st.markdown("""
-Ten kalkulator to symulator, który pozwala sprawdzić: **"Ile zarobilibyśmy, gdybyśmy zmienili spready i wielkość lotów w naszym Order Booku?"**
+---
 
-Bierze twarde, historyczne dane o tym, jak duże zlecenia składali klienci, a następnie przepuszcza je przez Order Book, aby ocenić rentowność poszczególnych konfiguracji.
+### Dane wejściowe — skąd pochodzi wolumen?
+
+Kalkulator wczytuje dwa pliki CSV (`futures_distribution.csv` i `spot_distribution.csv`), które zawierają historyczny rozkład zleceń klientów pogrupowany w przedziały wolumenowe (buckety). Każdy wiersz opisuje:
+
+- **volume_range** — przedział wielkości zlecenia w lotach, np. `(6, 11]` oznacza zlecenia większe niż 6 i nie większe niż 11 lotów.
+- **filled_volume** — łączny wolumen (w lotach) który historycznie wpadł w ten przedział. To zagregowana liczba z danych transakcyjnych.
+
+Dane te są stałe — odzwierciedlają historyczne zachowanie klientów i nie zmieniają się w zależności od konfiguracji Order Booka.
 
 ---
 
-### Instrukcja krok po kroku
+### Logika przypisania zlecenia do linii OB
 
-1. **Wybierz rynek** w jednej z pierwszych dwóch zakładek (Futures lub Spot).
-2. Zobaczysz podzielony ekran:
-   - **Lewa strona (Scenariusz A)** — punkt wyjścia, obecny Order Book.
-   - **Prawa strona (Scenariusz B)** — wariant do optymalizacji.
-3. **Zmień wartości** w tabeli po prawej stronie (np. podnieś spread na 3. linii lub zmniejsz Ask Size na pierwszej).
-4. Wszystkie wykresy i tabele zaktualizują się natychmiast i pokażą, ile zyskujesz lub tracisz względem punktu wyjścia.
+Dla każdego bucketu kalkulator sprawdza, na którą linię Order Booka wpadłoby zlecenie o wielkości równej górnej granicy tego przedziału. Robi to przez porównanie górnej granicy bucketu ze **skumulowanym Ask Size** Order Booka.
 
----
+Przykład: jeśli OB wygląda tak:
 
-### Słowniczek najważniejszych pojęć
+| OB Line | Ask Size | Cum. Ask Size |
+|---------|----------|---------------|
+| 1       | 1        | 1             |
+| 2       | 6        | 7             |
+| 3       | 11       | 18            |
 
-**Ask Size** — wielkość (w lotach) płynności dostępnej na danym poziomie Order Booka.
-
-**Spread** — liczba punktów którą płaci klient trafiając w daną linię.
-
-**Total Revenue** — całkowity wygenerowany przychód. Wzór: `Wolumen x Spread / 2`.
-
-**RPM (Revenue per Million)** — najważniejszy wskaźnik do oceny efektywności. Mówi ile dolarów przychodu generujesz z każdego 1 miliona dolarów obrotu klienta. Przyjęty standard rynkowy: **1 Lot XAUUSD = 500 000 USD obrotu**. RPM pozwala porównywać różne konfiguracje i rynki niezależnie od ich rozmiaru.
-
-**Fill Rate per OB Line** — pokazuje jak mocno obciążona jest każda linia. Jeśli 90% wolumenu przechodzi przez pierwsze dwie linie, zmiany spreadów na linii 8 nie mają praktycznego znaczenia dla przychodów.
+Zlecenie z bucketu `(6, 11]` (górna granica = 11) trafi w **linię 3**, bo dopiero tam skumulowany Ask Size osiąga wartość >= 11. Do tego bucketu zostaje przypisany spread z linii 3.
 
 ---
 
-### Jak interpretować wykres Current vs Optimized
+### Jak wyliczany jest Revenue?
 
-Lewy panel pokazuje zmianę grubości linii (Ask Size) — czy dajesz więcej czy mniej płynności na każdym poziomie.
-Prawy panel pokazuje zmianę spreadów. Różowe tło oznacza linie 1-2, które zazwyczaj są traktowane jako stałe (competitive tier) i nie powinny być agresywnie rozszerzane.
+```
+Revenue = (Filled_Volume x Assigned_Spread) / 2
+```
+
+Dzielenie przez 2 wynika z tego, że spread jest kwotowany jako różnica bid-ask, a LP zarabia połowę spreadu na każdej stronie transakcji.
 
 ---
 
-### Uwagi techniczne
+### Jak wyliczany jest Turnover?
 
-- Dane historyczne wczytywane są automatycznie z plików `futures_distribution.csv` oraz `spot_distribution.csv`.
-- Kalkulator nie zapisuje żadnych zmian — każde odświeżenie strony przywraca domyślne wartości Order Booka.
-- Wyniki można pobrać do pliku Excel przyciskiem na dole każdej zakładki.
+```
+Turnover_USD = Filled_Volume x 500 000 USD
+```
+
+Przyjęty standard: **1 Lot XAUUSD = 500 000 USD notional**. Jest to wartość zakodowana na stałe w aplikacji.
+
+---
+
+### Jak wyliczany jest RPM?
+
+```
+RPM = (Revenue_USD / Turnover_USD) x 1 000 000
+```
+
+RPM (Revenue per Million) to przychód w dolarach na każdy 1 milion dolarów obrotu. Jest to kluczowy wskaźnik efektywności — uniezależnia ocenę od rozmiaru wolumenu i pozwala porównywać różne konfiguracje Order Booka oraz różne rynki na jednej skali. RPM jest liczony zarówno per bucket (tabela wyników), jak i per linia OB (tabela Fill Rate).
+
+---
+
+### Fill Rate per OB Line — co pokazują tabele?
+
+Dla każdej linii OB kalkulator zlicza na podstawie przypisanych bucketów:
+
+- **Fill Count** — ile bucketów zostało przypisanych do tej linii, czyli ile razy ta linia obsłużyła zlecenie.
+- **Fill Volume** — łączny wolumen (w lotach) ze wszystkich bucketów przypisanych do tej linii.
+- **Fill Volume (%)** — udział tej linii w całkowitym wolumenie. Najważniejsza kolumna — pokazuje gdzie realnie koncentruje się obrót klientów.
+- **RPM** — efektywność przychodu liczona wyłącznie dla wolumenu który przeszedł przez tę linię.
+
+Fill Rate pozwala ocenić które linie OB mają realne znaczenie biznesowe. Jeśli linie 5-7 mają Fill Volume (%) bliskie zeru, zmiany ich spreadów nie wpłyną na przychód.
+
+---
+
+### Wykres Fill Rate — jak czytać?
+
+**Słupki (lewa oś Y)** — procentowy udział wolumenu per linia. Im wyższy słupek, tym więcej realnego obrotu klientów przeszło przez tę linię.
+
+**Linia ciągła (prawa oś Y)** — Fill Count, czyli liczba użyć danej linii. Duży Fill Count przy małym Fill Volume wskazuje na wiele małych zleceń — typowy sygnał flow retailowego.
+
+Porównanie Scenariusza A i B na tym wykresie pokazuje czy zmiana grubości linii w OB realnie przesunęła wolumen między liniami.
+
+---
+
+### Wykres Current vs Optimized — jak czytać?
+
+**Lewy panel (Lot Sizes)** — porównuje grubość linii (Ask Size) między Scenariuszem A i B. Pokazuje gdzie dodajesz lub zabierasz płynność.
+
+**Prawy panel (Spreads)** — porównuje spready per linia. Różowe tło na liniach 1-2 oznacza, że są traktowane jako "Fixed" — competitive tier, który zazwyczaj nie powinien być agresywnie zmieniany bez analizy wpływu na fill rate.
+
+---
+
+### Wykres Porównanie Przychodów — jak czytać?
+
+Słupki pokazują Revenue per bucket dla Scenariusza A (czerwony) i B (zielony). Linia przerywana (prawa oś) pokazuje procentową zmianę B względem A dla każdego bucketu z osobna. Pozwala zidentyfikować które przedziały wolumenowe zyskują lub tracą najbardziej na zmianie konfiguracji OB.
+
+---
+
+### Dane zakodowane na stałe w aplikacji
+
+| Parametr | Wartość | Opis |
+|----------|---------|------|
+| `LOT_PRICE_USD` | 500 000 USD | Wartość notional 1 lota XAUUSD |
+| Fixed Lines (wykres) | Linie 1-2 | Competitive tier oznaczony różowym tłem |
+| Domyślny OB Futures | 7 linii | Ask Size: 1, 6, 11, 15, 18, 19, 20 / Spready: 31, 42, 57, 84, 115, 164, 247 |
+| Domyślny OB Spot | 10 linii | Ask Size: 1, 6, 10, 15, 17, 18, 18, 25, 35, 44 / Spready: 21, 41, 62, 88, 112, 145, 180, 211, 241, 270 |
+
+---
+
+### Eksport danych
+
+Przycisk "Pobierz wyniki jako Excel" na dole każdej zakładki generuje plik z czterema arkuszami: wyniki per bucket dla Scenariusza A i B oraz tabele Fill Rate dla obu scenariuszy.
     """)
 
 # ==========================================
