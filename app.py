@@ -9,6 +9,23 @@ from plotly.subplots import make_subplots
 # ==========================================
 st.set_page_config(page_title="A/B Spread Revenue Calculator", layout="wide")
 
+# ==========================================
+# UKRYCIE ELEMENTOW STREAMLIT COMMUNITY CLOUD
+# CSS obejscie — moze przestac dzialac po aktualizacji Streamlit
+# ==========================================
+st.markdown("""
+    <style>
+        [data-testid="stActionButtonIcon"]      { display: none !important; }
+        button[data-testid="baseButton-header"] { display: none !important; }
+        .stActionButton                         { display: none !important; }
+        #MainMenu                               { visibility: hidden !important; }
+        footer                                  { visibility: hidden !important; }
+        .stAppDeployButton                      { display: none !important; }
+        [data-testid="stToolbar"]               { display: none !important; }
+        [data-testid="collapsedControl"]        { display: none !important; }
+    </style>
+""", unsafe_allow_html=True)
+
 LOT_PRICE_USD = 500_000.0  # Stała wartość 1 Lota dla XAUUSD
 
 # ==========================================
