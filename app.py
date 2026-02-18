@@ -164,11 +164,10 @@ def calculate_fill_rate_per_line(results: pd.DataFrame, order_book: pd.DataFrame
         count  = fill_counts[line]
         volume = fill_volumes[line]
         rows.append({
-            "OB Line":        line,
-            "Fill Count":     count,
-            "Fill Count (%)": round((count  / total_count  * 100), 1) if total_count  > 0 else 0.0,
-            "Fill Volume":    round(volume, 2),
-            "Fill Volume (%)":round((volume / total_volume * 100), 1) if total_volume > 0 else 0.0,
+            "OB Line":         line,
+            "Fill Count":      count,
+            "Fill Volume":     round(volume, 2),
+            "Fill Volume (%)": round((volume / total_volume * 100), 1) if total_volume > 0 else 0.0,
         })
 
     return pd.DataFrame(rows)
