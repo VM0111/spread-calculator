@@ -9,6 +9,8 @@ from plotly.subplots import make_subplots
 # ==========================================
 st.set_page_config(page_title="A/B Spread Revenue Calculator", layout="wide")
 
+LOT_PRICE_USD = 500_000.0  # Stała wartość 1 Lota dla XAUUSD
+
 # ==========================================
 # 2. ŁADOWANIE DANYCH (CSV)
 # ==========================================
@@ -88,10 +90,6 @@ def validate_order_book(ob: pd.DataFrame) -> list[str]:
 # 4. SILNIK KALKULACJI
 # ==========================================
 def parse_bucket_end(vol_range_str: str) -> float | None:
-    """
-    Parsuje górną granicę przedziału wolumenu ze stringa w formacie '(a, b]'.
-    Zwraca float lub None przy błędzie parsowania.
-    """
     try:
         cleaned = str(vol_range_str).replace('"', "").replace("'", "").strip()
         end_str = cleaned.split(",")[1].strip(" )]")
@@ -99,19 +97,12 @@ def parse_bucket_end(vol_range_str: str) -> float | None:
     except (IndexError, ValueError):
         return None
 
-
 def calculate_per_bucket_revenue(order_book: pd.DataFrame, volume_distribution: pd.DataFrame) -> pd.DataFrame:
-    """
-    Dla każdego przedziału wolumenu wyznacza spread z Order Book
-    i oblicza przychód: (filled_volume * spread) / 2.
-    Dodatkowo zapisuje numer linii OB która została użyta (OB_Line_Used).
-    """
     ob = order_book.copy()
     ob["Ask Size"] = pd.to_numeric(ob["Ask Size"], errors="coerce")
     ob["Spread"]   = pd.to_numeric(ob["Spread"],   errors="coerce")
     ob["Cum_Ask_Size"] = ob["Ask Size"].cumsum()
 
-    # Upewniamy się że kolumna OB Line istnieje — jeśli nie, tworzymy indeks
     if "OB Line" not in ob.columns:
         ob["OB Line"] = range(1, len(ob) + 1)
 
@@ -135,37 +126,40 @@ def calculate_per_bucket_revenue(order_book: pd.DataFrame, volume_distribution: 
             ob_line_used    = int(ob.iloc[-1]["OB Line"])
 
         revenue = round((filled_volume * assigned_spread) / 2, 2)
+        
+        # Wyliczenie Turnoveru i RPM
+        turnover_usd = filled_volume * LOT_PRICE_USD
+        rpm = (revenue / turnover_usd * 1_000_000) if turnover_usd > 0 else 0.0
 
         results.append({
             "Volume_Bucket":   row["volume_range"],
             "Filled_Volume":   round(filled_volume, 2),
             "OB_Line_Used":    ob_line_used,
             "Assigned_Spread": round(assigned_spread, 2),
+            "Turnover_USD":    round(turnover_usd, 2),
             "Revenue_USD":     revenue,
+            "RPM":             round(rpm, 2),
         })
 
     return pd.DataFrame(results)
 
-
 def calculate_fill_rate_per_line(results: pd.DataFrame, order_book: pd.DataFrame) -> pd.DataFrame:
-    """
-    Na podstawie wyników kalkulacji oblicza ile razy każda linia OB
-    została użyta (fill count) oraz jaki wolumen przez nią przeszedł.
-    """
     ob = order_book.copy()
     if "OB Line" not in ob.columns:
         ob["OB Line"] = range(1, len(ob) + 1)
 
     lines = ob["OB Line"].tolist()
 
-    fill_counts  = {line: 0   for line in lines}
-    fill_volumes = {line: 0.0 for line in lines}
+    fill_counts   = {line: 0   for line in lines}
+    fill_volumes  = {line: 0.0 for line in lines}
+    fill_revenues = {line: 0.0 for line in lines}
 
     for _, row in results.iterrows():
         line = row["OB_Line_Used"]
         if line in fill_counts:
-            fill_counts[line]  += 1
-            fill_volumes[line] += float(row["Filled_Volume"])
+            fill_counts[line]   += 1
+            fill_volumes[line]  += float(row["Filled_Volume"])
+            fill_revenues[line] += float(row["Revenue_USD"])
 
     total_count  = sum(fill_counts.values())
     total_volume = sum(fill_volumes.values())
@@ -174,17 +168,55 @@ def calculate_fill_rate_per_line(results: pd.DataFrame, order_book: pd.DataFrame
     for line in lines:
         count  = fill_counts[line]
         volume = fill_volumes[line]
+        rev    = fill_revenues[line]
+        
+        # RPM per konkretna linia
+        turnover = volume * LOT_PRICE_USD
+        rpm = (rev / turnover * 1_000_000) if turnover > 0 else 0.0
+        
         rows.append({
             "OB Line":         line,
             "Fill Count":      count,
             "Fill Volume":     round(volume, 2),
             "Fill Volume (%)": round((volume / total_volume * 100), 1) if total_volume > 0 else 0.0,
+            "RPM":             round(rpm, 2),
         })
 
     return pd.DataFrame(rows)
 
 # ==========================================
-# 5. SILNIK INTERFEJSU
+# 5. ZAKŁADKA Z INSTRUKCJĄ (Po ludzku)
+# ==========================================
+def render_instruction_tab():
+    st.header("📖 Jak korzystać z tego kalkulatora?")
+    
+    st.markdown("""
+    Cześć! Ten kalkulator to symulator, który pozwala Ci sprawdzić: **„Ile kasy byśmy zarobili, gdybyśmy zmienili spready i wielkość lotów w naszym Order Booku?”**
+    
+    Bierze on twarde, historyczne dane o tym, jak duże zlecenia składali klienci, a następnie "przepuszcza" je przez nasz Order Book, żeby sprawdzić rentowność.
+
+    ---
+
+    ### 🛠️ Instrukcja krok po kroku:
+    1. **Wybierz rynek** na górze (Futures lub Spot).
+    2. Zobaczysz podzielony ekran. 
+       - **Lewa strona (Scenariusz A)** to Twój punkt wyjścia (Obecny Order Book).
+       - **Prawa strona (Scenariusz B)** to Twój plac zabaw do optymalizacji.
+    3. **Zmień wartości** w tabeli po prawej stronie (np. podnieś spread na 3 linii, albo zmniejsz Ask Size na pierwszej).
+    4. Wszystkie wykresy i tabele poniżej zaktualizują się od razu i pokażą Ci, **ile zyskujesz lub tracisz** w stosunku do punktu wyjścia.
+
+    ---
+
+    ### 💡 Słowniczek najważniejszych pojęć:
+    * **Ask Size:** Wielkość (w lotach) płynności dostępnej na danym poziomie Order Booka.
+    * **Spread:** Ile punktów zapłaci klient, jeśli "wpadnie" w tę linię.
+    * **Total Revenue:** Całkowity wygenerowany zysk (wzór: `Wolumen * Spread / 2`).
+    * **RPM (Revenue per Million):** Najważniejszy wskaźnik do oceny! Mówi o tym, ile dolarów czystego zysku generujesz z każdego 1 miliona dolarów obrotu, jaki zrobi klient. Przyjęliśmy tu rynkowy standard: **1 Lot XAUUSD = 500 000 USD obrotu**. RPM pozwala świetnie porównywać różne rynki niezależnie od ich rozmiaru.
+    * **Fill Rate (Dolne tabele):** Pokazuje, jak mocno obciążona jest każda z linii. Jeśli widzisz, że 90% wolumenu idzie po pierwszych dwóch liniach, to wiesz, że zmiany spreadów na linii nr 8 nie zrobią dla biznesu żadnej różnicy.
+    """)
+
+# ==========================================
+# 6. SILNIK INTERFEJSU
 # ==========================================
 def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd.DataFrame) -> None:
     """Renderuje pełny dashboard dla jednego rynku (zakładki)."""
@@ -219,11 +251,14 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             return
 
         total_rev_a = results_a["Revenue_USD"].sum()
+        total_turnover_a = results_a["Turnover_USD"].sum()
+        rpm_a = (total_rev_a / total_turnover_a * 1_000_000) if total_turnover_a > 0 else 0.0
 
         st.markdown(
             f"<div style='margin-bottom:0.5rem;'><b>2. Wyniki A</b> &mdash; "
             f"Total Revenue: <span style='color:#EF553B;font-size:1.1em;font-weight:bold;'>"
-            f"${total_rev_a:,.2f}</span></div>",
+            f"${total_rev_a:,.2f}</span> "
+            f"<span style='color:#888;font-size:0.9em;margin-left:10px;'>| RPM: <b>${rpm_a:,.2f}</b></span></div>",
             unsafe_allow_html=True,
         )
         st.dataframe(results_a, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
@@ -255,16 +290,25 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             return
 
         total_rev_b = results_b["Revenue_USD"].sum()
+        total_turnover_b = results_b["Turnover_USD"].sum()
+        rpm_b = (total_rev_b / total_turnover_b * 1_000_000) if total_turnover_b > 0 else 0.0
+
         diff_vs_a   = total_rev_b - total_rev_a
         diff_color  = "#00CC96" if diff_vs_a >= 0 else "#EF553B"
         diff_sign   = "+" if diff_vs_a >= 0 else ""
+        
+        diff_rpm    = rpm_b - rpm_a
+        rpm_color   = "#00CC96" if diff_rpm >= 0 else "#EF553B"
+        rpm_sign    = "+" if diff_rpm >= 0 else ""
 
         st.markdown(
             f"<div style='margin-bottom:0.5rem;'><b>2. Wyniki B</b> &mdash; "
             f"Total Revenue: <span style='color:#00CC96;font-size:1.1em;font-weight:bold;'>"
             f"${total_rev_b:,.2f}</span> "
             f"<span style='color:{diff_color};font-size:0.9em;font-weight:bold;'>"
-            f"({diff_sign}${diff_vs_a:,.2f} vs A)</span></div>",
+            f"({diff_sign}${diff_vs_a:,.2f} vs A)</span><br>"
+            f"<span style='color:#888;font-size:0.9em;'>RPM: <b>${rpm_b:,.2f}</b></span> "
+            f"<span style='color:{rpm_color};font-size:0.8em;font-weight:bold;'>({rpm_sign}${diff_rpm:,.2f})</span></div>",
             unsafe_allow_html=True,
         )
         st.dataframe(results_b, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
@@ -381,9 +425,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     ), row=1, col=1)
 
     # Panel prawy — Spreads
-    # Zaznaczamy linie 1-2 jako "fixed" (różowe tło jak na obrazku)
     fixed_lines_count = min(2, n)
-    fixed_x = ob_lines_str[:fixed_lines_count] + ob_lines_str[:fixed_lines_count][::-1]
     max_spr  = max(max(spr_a[:n]), max(spr_b[:n])) * 1.1
 
     fig_ob.add_trace(go.Scatter(
@@ -505,26 +547,25 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     )
 
 # ==========================================
-# 6. GŁÓWNA STRONA I ZAKŁADKI
+# 7. GŁÓWNA STRONA I ZAKŁADKI
 # ==========================================
 st.title("A/B Spread & Revenue Calculator")
-st.write("Wybierz rynek z zakładek poniżej, aby porównać scenariusze na odpowiednich wolumenach.")
+st.write("Skorzystaj z zakładek poniżej, aby przeczytać instrukcję lub przejść do analizy.")
 
 df_futures, df_spot = load_distributions()
-
-# Załadowanie osobnych Order Booków
 default_ob_futures = load_default_order_book_futures()
 default_ob_spot    = load_default_order_book_spot()
 
 if not df_futures.empty and not df_spot.empty:
-    tab_future, tab_spot = st.tabs(["Rynek: Futures", "Rynek: Spot"])
+    tab_instrukcja, tab_future, tab_spot = st.tabs(["📖 Instrukcja", "📈 Rynek: Futures", "📉 Rynek: Spot"])
+
+    with tab_instrukcja:
+        render_instruction_tab()
 
     with tab_future:
-        # Przekazanie starego Order Booka dla zakładki Futures
         render_dashboard(df_futures, "Futures", default_ob_futures)
 
     with tab_spot:
-        # Przekazanie nowego, 10-poziomowego Order Booka dla zakładki Spot
         render_dashboard(df_spot, "Spot", default_ob_spot)
 
 else:
