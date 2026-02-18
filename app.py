@@ -38,12 +38,23 @@ def load_distributions() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 @st.cache_data
-def load_default_order_book() -> pd.DataFrame:
+def load_default_order_book_futures() -> pd.DataFrame:
+    """Domyślny Order Book dla zakładki Futures"""
     return pd.DataFrame({
         "OB Line": [1, 2, 3, 4, 5, 6, 7],
         "Bid Size": [1.0,  6.0, 10.0, 11.0, 15.0, 19.0, 23.0],
         "Ask Size": [1.0,  6.0, 11.0, 15.0, 18.0, 19.0, 20.0],
         "Spread":   [31.0, 42.0, 57.0, 84.0, 115.0, 164.0, 247.0],
+    })
+
+@st.cache_data
+def load_default_order_book_spot() -> pd.DataFrame:
+    """Nowy, domyślny Order Book wczytany z pliku OB.xlsx dla zakładki Spot"""
+    return pd.DataFrame({
+        "OB Line": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "Bid Size": [1.0, 6.0, 10.0, 13.0, 18.0, 19.0, 22.0, 32.0, 36.0, 42.0],
+        "Ask Size": [1.0, 6.0, 10.0, 15.0, 17.0, 18.0, 18.0, 25.0, 35.0, 44.0],
+        "Spread":   [21.0, 41.0, 62.0, 88.0, 112.0, 145.0, 180.0, 211.0, 241.0, 270.0],
     })
 
 # ==========================================
@@ -326,7 +337,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     fig_fill.update_yaxes(title_text="Fill Volume (%)", secondary_y=False)
     fig_fill.update_yaxes(title_text="Fill Count (liczba bucketów)", secondary_y=True, showgrid=False)
 
-    st.plotly_chart(fig_fill, use_container_width=True)
+    st.plotly_chart(fig_fill, use_container_width=True, key=f"chart_fill_{tab_name}")
 
     st.divider()
 
@@ -417,7 +428,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     fig_ob.update_yaxes(title_text="Lot Capacity", row=1, col=1)
     fig_ob.update_yaxes(title_text="Spread (points)", row=1, col=2)
 
-    st.plotly_chart(fig_ob, use_container_width=True)
+    st.plotly_chart(fig_ob, use_container_width=True, key=f"chart_ob_{tab_name}")
 
     # ==========================================
     # SEKCJA: PRZYCHÓD — porównanie A vs B
@@ -471,7 +482,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
         showgrid=False, tickformat=".1f", ticksuffix="%",
     )
 
-    st.plotly_chart(fig_rev, use_container_width=True)
+    st.plotly_chart(fig_rev, use_container_width=True, key=f"chart_rev_{tab_name}")
 
     # ==========================================
     # EKSPORT DO EXCELA
@@ -500,16 +511,21 @@ st.title("A/B Spread & Revenue Calculator")
 st.write("Wybierz rynek z zakładek poniżej, aby porównać scenariusze na odpowiednich wolumenach.")
 
 df_futures, df_spot = load_distributions()
-default_ob_df = load_default_order_book()
+
+# Załadowanie osobnych Order Booków
+default_ob_futures = load_default_order_book_futures()
+default_ob_spot    = load_default_order_book_spot()
 
 if not df_futures.empty and not df_spot.empty:
     tab_future, tab_spot = st.tabs(["Rynek: Futures", "Rynek: Spot"])
 
     with tab_future:
-        render_dashboard(df_futures, "Futures", default_ob_df)
+        # Przekazanie starego Order Booka dla zakładki Futures
+        render_dashboard(df_futures, "Futures", default_ob_futures)
 
     with tab_spot:
-        render_dashboard(df_spot, "Spot", default_ob_df)
+        # Przekazanie nowego, 10-poziomowego Order Booka dla zakładki Spot
+        render_dashboard(df_spot, "Spot", default_ob_spot)
 
 else:
     st.warning(
