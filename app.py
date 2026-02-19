@@ -68,13 +68,13 @@ def load_default_order_book_futures() -> pd.DataFrame:
 
 
 @st.cache_data
-def load_default_order_book_spot() -> pd.DataFrame:
-    """Domyślny Order Book dla zakładki Spot (dane z OB.xlsx)."""
+def load_default_order_book_spot_b() -> pd.DataFrame:
+    """Domyślny Order Book B dla zakładki Spot (Optimized, dane z OB.xlsx)."""
     return pd.DataFrame({
         "OB Line": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-        "Bid Size": [1.0, 5.5, 7.0, 9.0, 17.0, 18.0, 19.5, 23.5, 35.0, 44.0],
-        "Ask Size": [1.0, 5.5, 7.0, 9.0, 17.0, 18.0, 19.5, 23.5, 35.0, 44.0],
-        "Spread":   [22.0, 40.0, 60.0, 82.0, 112.0, 145.0, 180.0, 211.0, 241.0, 270.0],
+        "Bid Size": [1.0, 4.5, 6.0, 9.0, 11.5, 14.0, 16.5, 23.5, 35.0, 44.0],
+        "Ask Size": [1.0, 4.5, 6.0, 9.0, 11.5, 14.0, 16.5, 23.5, 35.0, 44.0],
+        "Spread":   [20.0, 44.0, 65.0, 82.0, 112.0, 145.0, 180.0, 211.0, 241.0, 270.0],
     })
 
 @st.cache_data
