@@ -69,12 +69,22 @@ def load_default_order_book_futures() -> pd.DataFrame:
 
 @st.cache_data
 def load_default_order_book_spot() -> pd.DataFrame:
-    """Domyślny Order Book dla zakładki Spot."""
+    """Domyślny Order Book dla zakładki Spot (dane z OB.xlsx)."""
     return pd.DataFrame({
         "OB Line": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-        "Bid Size": [1.0,  6.0, 10.0, 13.0, 18.0, 19.0, 22.0, 32.0, 36.0, 42.0],
-        "Ask Size": [1.0,  6.0, 10.0, 15.0, 17.0, 18.0, 18.0, 25.0, 35.0, 44.0],
-        "Spread":   [21.0, 41.0, 62.0, 88.0, 112.0, 145.0, 180.0, 211.0, 241.0, 270.0],
+        "Bid Size": [1.0, 4.5, 6.5, 9.0, 11.5, 14.0, 16.5, 23.5, 35.0, 44.0],
+        "Ask Size": [1.0, 4.5, 6.5, 9.0, 11.5, 14.0, 16.5, 23.5, 35.0, 44.0],
+        "Spread":   [22.0, 40.0, 60.0, 82.0, 112.0, 145.0, 180.0, 211.0, 241.0, 270.0],
+    })
+
+@st.cache_data
+def load_default_order_book_spot_b() -> pd.DataFrame:
+    """Domyślny Order Book B dla zakładki Spot (Optimized, dane z OB.xlsx)."""
+    return pd.DataFrame({
+        "OB Line": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "Bid Size": [1.0, 4.5, 6.0, 9.0, 11.5, 14.0, 16.5, 23.5, 35.0, 44.0],
+        "Ask Size": [1.0, 4.5, 6.0, 9.0, 11.5, 14.0, 16.5, 23.5, 35.0, 44.0],
+        "Spread":   [20.0, 44.0, 65.0, 82.0, 112.0, 145.0, 180.0, 211.0, 241.0, 270.0],
     })
 
 # ==========================================
@@ -202,7 +212,7 @@ def calculate_fill_rate_per_line(results: pd.DataFrame, order_book: pd.DataFrame
 # ==========================================
 # 5. SILNIK INTERFEJSU
 # ==========================================
-def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd.DataFrame) -> None:
+def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd.DataFrame, default_ob_df_b: pd.DataFrame = None) -> None:
     """Renderuje pełny dashboard dla jednego rynku (zakładki)."""
 
     TABLE_HEIGHT = 300
@@ -253,7 +263,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
         st.markdown("**1. Edytuj Order Book B**")
 
         edited_ob_b = st.data_editor(
-            default_ob_df.copy(),
+            (default_ob_df_b if default_ob_df_b is not None else default_ob_df).copy(),
             num_rows="dynamic",
             use_container_width=True,
             hide_index=True,
@@ -653,6 +663,7 @@ st.write("Wybierz rynek z zakładek poniżej, aby porównać scenariusze na odpo
 df_futures, df_spot = load_distributions()
 default_ob_futures  = load_default_order_book_futures()
 default_ob_spot     = load_default_order_book_spot()
+default_ob_spot_b   = load_default_order_book_spot_b()
 
 if not df_futures.empty and not df_spot.empty:
     tab_future, tab_spot, tab_instrukcja = st.tabs([
@@ -665,7 +676,7 @@ if not df_futures.empty and not df_spot.empty:
         render_dashboard(df_futures, "Futures", default_ob_futures)
 
     with tab_spot:
-        render_dashboard(df_spot, "Spot", default_ob_spot)
+        render_dashboard(df_spot, "Spot", default_ob_spot, default_ob_spot_b)
 
     with tab_instrukcja:
         render_instruction_tab()
