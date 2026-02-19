@@ -68,7 +68,7 @@ def load_default_order_book_futures() -> pd.DataFrame:
 
 
 @st.cache_data
-def load_default_order_book_spot_b() -> pd.DataFrame:
+def load_default_order_book_spot_a() -> pd.DataFrame:
     """Domyślny Order Book B dla zakładki Spot (Optimized, dane z OB.xlsx)."""
     return pd.DataFrame({
         "OB Line": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
