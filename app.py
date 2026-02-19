@@ -68,8 +68,8 @@ def load_default_order_book_futures() -> pd.DataFrame:
 
 
 @st.cache_data
-def load_default_order_book_spot() -> pd.DataFrame:
-    """Domyślny Order Book dla zakładki Spot."""
+def load_default_order_book_spot_a() -> pd.DataFrame:
+    """Domyślny Order Book B dla zakładki Spot (Optimized, dane z OB.xlsx)."""
     return pd.DataFrame({
         "OB Line": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         "Bid Size": [1.0, 4.5, 6.0, 9.0, 11.5, 14.0, 16.5, 23.5, 35.0, 44.0],
@@ -416,7 +416,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     ), row=1, col=1)
 
     fixed_lines_count = min(2, n)
-    max_spr  = max(max(spr_a[:n]), max(spr_b[:n])) * 1.1
+    max_spr = max(max(spr_a[:n]), max(spr_b[:n])) * 1.1
 
     fig_ob.add_trace(go.Scatter(
         x=ob_lines_str[:fixed_lines_count] + ob_lines_str[:fixed_lines_count][::-1],
@@ -454,7 +454,6 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
         margin=dict(l=0, r=0, t=60, b=0),
         legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="right", x=1),
     )
-
     fig_ob.update_xaxes(title_text="OB Line", row=1, col=1)
     fig_ob.update_xaxes(title_text="OB Line", row=1, col=2)
     fig_ob.update_yaxes(title_text="Lot Capacity", row=1, col=1)
@@ -573,3 +572,117 @@ Zlecenie z bucketu `(6, 11]` (górna granica = 11) trafi w **linię 3**, bo dopi
 ---
 
 ### Jak wyliczany jest Revenue?
+
+```
+Revenue = (Filled_Volume x Assigned_Spread) / 2
+```
+
+Dzielenie przez 2 wynika z tego, że spread jest kwotowany jako różnica bid-ask, a LP zarabia połowę spreadu na każdej stronie transakcji.
+
+---
+
+### Jak wyliczany jest Turnover?
+
+```
+Turnover_USD = Filled_Volume x 500 000 USD
+```
+
+Przyjęty standard: **1 Lot XAUUSD = 500 000 USD notional**. Jest to wartość zakodowana na stałe w aplikacji.
+
+---
+
+### Jak wyliczany jest RPM?
+
+```
+RPM = (Revenue_USD / Turnover_USD) x 1 000 000
+```
+
+RPM (Revenue per Million) to przychód w dolarach na każdy 1 milion dolarów obrotu. Jest to kluczowy wskaźnik efektywności — uniezależnia ocenę od rozmiaru wolumenu i pozwala porównywać różne konfiguracje Order Booka oraz różne rynki na jednej skali. RPM jest liczony zarówno per bucket (tabela wyników), jak i per linia OB (tabela Fill Rate).
+
+---
+
+### Fill Rate per OB Line — co pokazują tabele?
+
+Dla każdej linii OB kalkulator zlicza na podstawie przypisanych bucketów:
+
+- **Fill Count** — ile bucketów zostało przypisanych do tej linii, czyli ile razy ta linia obsłużyła zlecenie.
+- **Fill Volume** — łączny wolumen (w lotach) ze wszystkich bucketów przypisanych do tej linii.
+- **Fill Volume (%)** — udział tej linii w całkowitym wolumenie. Najważniejsza kolumna — pokazuje gdzie realnie koncentruje się obrót klientów.
+- **RPM** — efektywność przychodu liczona wyłącznie dla wolumenu który przeszedł przez tę linię.
+
+Fill Rate pozwala ocenić które linie OB mają realne znaczenie biznesowe. Jeśli linie 5-7 mają Fill Volume (%) bliskie zeru, zmiany ich spreadów nie wpłyną na przychód.
+
+---
+
+### Wykres Fill Rate — jak czytać?
+
+**Słupki (lewa oś Y)** — procentowy udział wolumenu per linia. Im wyższy słupek, tym więcej realnego obrotu klientów przeszło przez tę linię.
+
+**Linia ciągła (prawa oś Y)** — Fill Count, czyli liczba użyć danej linii. Duży Fill Count przy małym Fill Volume wskazuje na wiele małych zleceń — typowy sygnał flow retailowego.
+
+Porównanie Scenariusza A i B na tym wykresie pokazuje czy zmiana grubości linii w OB realnie przesunęła wolumen między liniami.
+
+---
+
+### Wykres Current vs Optimized — jak czytać?
+
+**Lewy panel (Lot Sizes)** — porównuje grubość linii (Ask Size) między Scenariuszem A i B. Pokazuje gdzie dodajesz lub zabierasz płynność.
+
+**Prawy panel (Spreads)** — porównuje spready per linia. Różowe tło na liniach 1-2 oznacza, że są traktowane jako "Fixed" — competitive tier, który zazwyczaj nie powinien być agresywnie zmieniany bez analizy wpływu na fill rate.
+
+---
+
+### Wykres Porównanie Przychodów — jak czytać?
+
+Słupki pokazują Revenue per bucket dla Scenariusza A (czerwony) i B (zielony). Linia przerywana (prawa oś) pokazuje procentową zmianę B względem A dla każdego bucketu z osobna. Pozwala zidentyfikować które przedziały wolumenowe zyskują lub tracą najbardziej na zmianie konfiguracji OB.
+
+---
+
+### Dane zakodowane na stałe w aplikacji
+
+| Parametr | Wartość | Opis |
+|----------|---------|------|
+| `LOT_PRICE_USD` | 500 000 USD | Wartość notional 1 lota XAUUSD |
+| Fixed Lines (wykres) | Linie 1-2 | Competitive tier oznaczony różowym tłem |
+| Domyślny OB Futures | 7 linii | Ask Size: 1, 6, 11, 15, 18, 19, 20 / Spready: 31, 42, 57, 84, 115, 164, 247 |
+| Domyślny OB Spot | 10 linii | Ask Size: 1, 6, 10, 15, 17, 18, 18, 25, 35, 44 / Spready: 21, 41, 62, 88, 112, 145, 180, 211, 241, 270 |
+
+---
+
+### Eksport danych
+
+Przycisk "Pobierz wyniki jako Excel" na dole każdej zakładki generuje plik z czterema arkuszami: wyniki per bucket dla Scenariusza A i B oraz tabele Fill Rate dla obu scenariuszy.
+    """)
+
+# ==========================================
+# 7. GŁÓWNA STRONA I ZAKŁADKI
+# ==========================================
+st.title("A/B Spread & Revenue Calculator")
+st.write("Wybierz rynek z zakładek poniżej, aby porównać scenariusze na odpowiednich wolumenach.")
+
+df_futures, df_spot = load_distributions()
+default_ob_futures  = load_default_order_book_futures()
+default_ob_spot     = load_default_order_book_spot_a()
+default_ob_spot_b   = load_default_order_book_spot_b()
+
+if not df_futures.empty and not df_spot.empty:
+    tab_future, tab_spot, tab_instrukcja = st.tabs([
+        "Rynek: Futures",
+        "Rynek: Spot",
+        "Instrukcja",
+    ])
+
+    with tab_future:
+        render_dashboard(df_futures, "Futures", default_ob_futures)
+
+    with tab_spot:
+        render_dashboard(df_spot, "Spot", default_ob_spot, default_ob_spot_b)
+
+    with tab_instrukcja:
+        render_instruction_tab()
+
+else:
+    st.warning(
+        "Oczekuję na pliki. Upewnij się, że wgrałeś "
+        "`futures_distribution.csv` oraz `spot_distribution.csv`."
+    )
