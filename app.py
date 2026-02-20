@@ -180,7 +180,7 @@ def parse_bucket_end(vol_range_str: str) -> float | None:
         return None
 
 
-def calculate_per_bucket_revenue(order_book: pd.DataFrame, volume_distribution: pd.DataFrame, lot_price: float) -> pd.DataFrame:
+def calculate_per_bucket_revenue(order_book: pd.DataFrame, volume_distribution: pd.DataFrame, lot_price: float, spread_multiplier: float = 1.0) -> pd.DataFrame:
     ob = order_book.copy()
     ob["Ask Size"] = pd.to_numeric(ob["Ask Size"], errors="coerce")
     ob["Spread"]   = pd.to_numeric(ob["Spread"],   errors="coerce")
@@ -208,7 +208,7 @@ def calculate_per_bucket_revenue(order_book: pd.DataFrame, volume_distribution: 
             assigned_spread = float(ob.iloc[-1]["Spread"])
             ob_line_used    = int(ob.iloc[-1]["OB Line"])
 
-        revenue      = round((filled_volume * assigned_spread) / 2, 2)
+        revenue      = round((filled_volume * assigned_spread * spread_multiplier) / 2, 2)
         turnover_usd = filled_volume * lot_price
         rpm          = (revenue / turnover_usd * 1_000_000) if turnover_usd > 0 else 0.0
 
@@ -267,7 +267,7 @@ def calculate_fill_rate_per_line(results: pd.DataFrame, order_book: pd.DataFrame
 # 5. SILNIK INTERFEJSU
 # ==========================================
 def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd.DataFrame,
-                     lot_price: float, default_ob_df_b: pd.DataFrame = None) -> None:
+                     lot_price: float, default_ob_df_b: pd.DataFrame = None, spread_multiplier: float = 1.0) -> None:
     """Renderuje pełny dashboard dla jednego rynku (zakładki)."""
 
     TABLE_HEIGHT = 300
@@ -293,8 +293,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
                 st.error(f"Order Book A — {err}")
             return
 
-        results_a = calculate_per_bucket_revenue(edited_ob_a, vol_dist_df, lot_price)
-
+        results_a = calculate_per_bucket_revenue(edited_ob_a, vol_dist_df, lot_price, spread_multiplier)
         if results_a.empty:
             st.warning("Brak wyników dla Scenariusza A. Sprawdź dane wejściowe.")
             return
@@ -332,7 +331,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
                 st.error(f"Order Book B — {err}")
             return
 
-        results_b = calculate_per_bucket_revenue(edited_ob_b, vol_dist_df, lot_price)
+        results_b = calculate_per_bucket_revenue(edited_ob_b, vol_dist_df, lot_price, spread_multiplier)
 
         if results_b.empty:
             st.warning("Brak wyników dla Scenariusza B. Sprawdź dane wejściowe.")
@@ -638,10 +637,14 @@ Zlecenie z bucketu `(6, 11]` (górna granica = 11) trafi w **linię 3**, bo dopi
 ### Jak wyliczany jest Revenue?
 
 ```
-Revenue = (Filled_Volume x Assigned_Spread) / 2
+Revenue = (Filled_Volume x Assigned_Spread x Spread_Multiplier) / 2
 ```
 
 Dzielenie przez 2 wynika z tego, że spread jest kwotowany jako różnica bid-ask, a LP zarabia połowę spreadu na każdej stronie transakcji.
+
+Wartość Spread_Multiplier zależy od instrumentu:
+- **XAUUSD**: Spread_Multiplier = 1
+- **XAGUSD**: Spread_Multiplier = 10
 
 ---
 
@@ -710,6 +713,8 @@ Słupki pokazują Revenue per bucket dla Scenariusza A (czerwony) i B (zielony).
 |----------|---------|------|
 | `LOT_PRICE_XAUUSD` | 500 000 USD | Wartość notional 1 lota XAUUSD |
 | `LOT_PRICE_XAGUSD` | 400 000 USD | Wartość notional 1 lota XAGUSD |
+| `Spread Multiplier XAUUSD` | 1 | Mnożnik spreadu dla XAUUSD |
+| `Spread Multiplier XAGUSD` | 10 | Mnożnik spreadu dla XAGUSD |
 | Fixed Lines (wykres) | Linie 1-2 | Competitive tier oznaczony różowym tłem |
 | Domyślny OB XAUUSD Futures | 7 linii | Ask: 1, 6, 11, 15, 18, 19, 20 / Spready: 31, 42, 57, 84, 115, 164, 247 |
 | Domyślny OB XAUUSD Spot | 10 linii | Ask: 1, 4.5, 6, 9, 11.5, 14, 16.5, 23.5, 35, 44 / Spready: 20, 44, 65, 82, 112, 145, 180, 211, 241, 270 |
@@ -750,9 +755,9 @@ xag_ok = not df_xag_futures.empty and not df_xag_spot.empty
 if xau_ok or xag_ok:
     tab_names = []
     if xau_ok:
-        tab_names += ["Rynek Futures XAUUSD", "Rynek Spot XAUUSD"]
+        tab_names += ["Futures XAUUSD", "Spot XAUUSD"]
     if xag_ok:
-        tab_names += ["Rynek Futures XAGUSD", "Rynek Spot XAGUSD"]
+        tab_names += ["Futures XAGUSD", "Spot XAGUSD"]
     tab_names.append("Instrukcja")
 
     tabs = st.tabs(tab_names)
@@ -770,11 +775,11 @@ if xau_ok or xag_ok:
 
     if xag_ok:
         with tabs[idx]:
-            render_dashboard(df_xag_futures, "Futures XAGUSD", ob_xag_futures, LOT_PRICE_XAGUSD)
+            render_dashboard(df_xag_futures, "Futures XAGUSD", ob_xag_futures, LOT_PRICE_XAGUSD, spread_multiplier=10.0)
         idx += 1
 
         with tabs[idx]:
-            render_dashboard(df_xag_spot, "Spot XAGUSD", ob_xag_spot_a, LOT_PRICE_XAGUSD, ob_xag_spot_b)
+            render_dashboard(df_xag_spot, "Spot XAGUSD", ob_xag_spot_a, LOT_PRICE_XAGUSD, ob_xag_spot_b, spread_multiplier=10.0)
         idx += 1
 
     with tabs[idx]:
