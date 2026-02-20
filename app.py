@@ -122,8 +122,8 @@ def load_default_ob_xauusd_spot_b() -> pd.DataFrame:
 def load_default_ob_xagusd_futures() -> pd.DataFrame:
     return pd.DataFrame({
         "OB Line": [1, 2, 3, 4, 5, 6, 7],
-        "Bid Size": [2.4, 3.0, 4.5, 6.0, 7.5, 9.0, 11.5],
-        "Ask Size": [2.4, 3.0, 4.5, 6.0, 7.5, 9.0, 11.5],
+        "Bid Size": [2.0, 3.0, 4.0, 6.0, 7.0, 9.0, 11.0],
+        "Ask Size": [2.0, 3.0, 4.0, 6.0, 7.0, 9.0, 11.0],
         "Spread":   [46.0, 52.0, 66.0, 80.0, 96.0, 110.0, 132.0],
     })
 
@@ -712,7 +712,7 @@ Słupki pokazują Revenue per bucket dla Scenariusza A (czerwony) i B (zielony).
 | `LOT_PRICE_XAGUSD` | 400 000 USD | Wartość notional 1 lota XAGUSD |
 | Fixed Lines (wykres) | Linie 1-2 | Competitive tier oznaczony różowym tłem |
 | Domyślny OB XAUUSD Futures | 7 linii | Ask: 1, 6, 11, 15, 18, 19, 20 / Spready: 31, 42, 57, 84, 115, 164, 247 |
-| Domyślny OB XAUUSD Spot | 10 linii | Ask: 1, 4.5, 6, 9, 11.5, 14, 16, 23, 35, 44 / Spready: 20, 44, 65, 82, 112, 145, 180, 211, 241, 270 |
+| Domyślny OB XAUUSD Spot | 10 linii | Ask: 1, 4.5, 6, 9, 11.5, 14, 16.5, 23.5, 35, 44 / Spready: 20, 44, 65, 82, 112, 145, 180, 211, 241, 270 |
 | Domyślny OB XAGUSD Futures | 7 linii | Ask: 2, 3, 4, 6, 7, 9, 11 / Spready: 46, 52, 66, 80, 96, 110, 132 |
 | Domyślny OB XAGUSD Spot | 5 linii | Ask: 1, 2, 5, 10, 20 / Spready: 22, 40, 60, 82, 112 |
 
