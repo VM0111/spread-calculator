@@ -11,7 +11,6 @@ st.set_page_config(page_title="A/B Spread Revenue Calculator", layout="wide")
 
 # ==========================================
 # UKRYCIE ELEMENTOW STREAMLIT COMMUNITY CLOUD
-# CSS obejscie — moze przestac dzialac po aktualizacji Streamlit
 # ==========================================
 st.markdown("""
     <style>
@@ -26,39 +25,68 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-LOT_PRICE_USD = 500_000.0  # Stała wartość 1 Lota dla XAUUSD
+# ==========================================
+# STAŁE — WARTOŚĆ 1 LOTA
+# ==========================================
+LOT_PRICE_XAUUSD = 500_000.0   # 1 Lot XAUUSD = 500 000 USD
+LOT_PRICE_XAGUSD = 400_000.0   # 1 Lot XAGUSD = 400 000 USD
 
 # ==========================================
 # 2. ŁADOWANIE DANYCH (CSV)
 # ==========================================
 @st.cache_data
-def load_distributions() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Ładuje dystrybucje wolumenu dla rynków Futures i Spot.
-    Oczekiwane kolumny CSV: volume_range (string), filled_volume (float).
-    """
+def load_csv_auto_sep(path: str) -> pd.DataFrame:
+    """Ładuje CSV automatycznie wykrywając separator (; lub ,)."""
     try:
-        df_futures = pd.read_csv("futures_distribution.csv")
-        df_spot    = pd.read_csv("spot_distribution.csv")
+        df = pd.read_csv(path, sep=";")
+        if len(df.columns) >= 2:
+            return df
+    except Exception:
+        pass
+    return pd.read_csv(path, sep=",")
 
+
+@st.cache_data
+def load_distributions_xauusd() -> tuple[pd.DataFrame, pd.DataFrame]:
+    try:
+        df_futures = load_csv_auto_sep("futures_distribution.csv")
+        df_spot    = load_csv_auto_sep("spot_distribution.csv")
         for name, df in [("futures_distribution.csv", df_futures), ("spot_distribution.csv", df_spot)]:
             if "volume_range" not in df.columns or "filled_volume" not in df.columns:
                 st.error(f"Plik {name} nie zawiera wymaganych kolumn: 'volume_range', 'filled_volume'.")
                 return pd.DataFrame(), pd.DataFrame()
-
         return df_futures, df_spot
-
     except FileNotFoundError as e:
-        st.error(f"Nie znaleziono pliku dystrybucji: {e}")
+        st.error(f"Nie znaleziono pliku dystrybucji XAUUSD: {e}")
         return pd.DataFrame(), pd.DataFrame()
     except Exception as e:
-        st.error(f"Nieoczekiwany błąd podczas ładowania danych: {e}")
+        st.error(f"Nieoczekiwany błąd (XAUUSD): {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 
 @st.cache_data
-def load_default_order_book_futures() -> pd.DataFrame:
-    """Domyślny Order Book dla zakładki Futures."""
+def load_distributions_xagusd() -> tuple[pd.DataFrame, pd.DataFrame]:
+    try:
+        df_futures = load_csv_auto_sep("futures_distribution_XAGUSD.csv")
+        df_spot    = load_csv_auto_sep("spot_distribution_XAGUSD.csv")
+        for name, df in [("futures_distribution_XAGUSD.csv", df_futures), ("spot_distribution_XAGUSD.csv", df_spot)]:
+            if "volume_range" not in df.columns or "filled_volume" not in df.columns:
+                st.error(f"Plik {name} nie zawiera wymaganych kolumn: 'volume_range', 'filled_volume'.")
+                return pd.DataFrame(), pd.DataFrame()
+        return df_futures, df_spot
+    except FileNotFoundError as e:
+        st.error(f"Nie znaleziono pliku dystrybucji XAGUSD: {e}")
+        return pd.DataFrame(), pd.DataFrame()
+    except Exception as e:
+        st.error(f"Nieoczekiwany błąd (XAGUSD): {e}")
+        return pd.DataFrame(), pd.DataFrame()
+
+
+# ==========================================
+# DOMYŚLNE ORDER BOOKI — XAUUSD
+# ==========================================
+@st.cache_data
+def load_default_ob_xauusd_futures() -> pd.DataFrame:
     return pd.DataFrame({
         "OB Line": [1, 2, 3, 4, 5, 6, 7],
         "Bid Size": [1.0,  6.0, 10.0, 11.0, 15.0, 19.0, 23.0],
@@ -66,10 +94,8 @@ def load_default_order_book_futures() -> pd.DataFrame:
         "Spread":   [31.0, 42.0, 57.0, 84.0, 115.0, 164.0, 247.0],
     })
 
-
 @st.cache_data
-def load_default_order_book_spot_a() -> pd.DataFrame:
-    """Domyślny Order Book B dla zakładki Spot (Optimized, dane z OB.xlsx)."""
+def load_default_ob_xauusd_spot_a() -> pd.DataFrame:
     return pd.DataFrame({
         "OB Line": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         "Bid Size": [1.0, 4.5, 6.0, 9.0, 11.5, 14.0, 16.5, 23.5, 35.0, 44.0],
@@ -78,25 +104,53 @@ def load_default_order_book_spot_a() -> pd.DataFrame:
     })
 
 @st.cache_data
-def load_default_order_book_spot_b() -> pd.DataFrame:
-    """Domyślny Order Book B dla zakładki Spot (Optimized, dane z OB.xlsx)."""
+def load_default_ob_xauusd_spot_b() -> pd.DataFrame:
     return pd.DataFrame({
         "OB Line": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         "Bid Size": [1.0, 4.5, 6.0, 9.0, 11.5, 14.0, 16.5, 23.5, 35.0, 44.0],
         "Ask Size": [1.0, 4.5, 6.0, 9.0, 11.5, 14.0, 16.5, 23.5, 35.0, 44.0],
         "Spread":   [20.0, 44.0, 65.0, 82.0, 112.0, 145.0, 180.0, 211.0, 241.0, 270.0],
     })
+
+
+# ==========================================
+# DOMYŚLNE ORDER BOOKI — XAGUSD
+# Futures: z OB_Futures_XAGUSD.xlsx (7 linii)
+# Spot:    z OB_Spot_XAGUSD.xlsx    (5 linii)
+# ==========================================
+@st.cache_data
+def load_default_ob_xagusd_futures() -> pd.DataFrame:
+    return pd.DataFrame({
+        "OB Line": [1, 2, 3, 4, 5, 6, 7],
+        "Bid Size": [2.4, 3.0, 4.5, 6.0, 7.5, 9.0, 11.5],
+        "Ask Size": [2.4, 3.0, 4.5, 6.0, 7.5, 9.0, 11.5],
+        "Spread":   [46.0, 52.0, 66.0, 80.0, 96.0, 110.0, 132.0],
+    })
+
+@st.cache_data
+def load_default_ob_xagusd_spot_a() -> pd.DataFrame:
+    return pd.DataFrame({
+        "OB Line": [1, 2, 3, 4, 5],
+        "Bid Size": [1.0, 2.0, 5.0, 10.0, 20.0],
+        "Ask Size": [1.0, 2.0, 5.0, 10.0, 20.0],
+        "Spread":   [22.0, 40.0, 60.0, 82.0, 112.0],
+    })
+
+@st.cache_data
+def load_default_ob_xagusd_spot_b() -> pd.DataFrame:
+    return pd.DataFrame({
+        "OB Line": [1, 2, 3, 4, 5],
+        "Bid Size": [1.0, 2.0, 5.0, 10.0, 20.0],
+        "Ask Size": [1.0, 2.0, 5.0, 10.0, 20.0],
+        "Spread":   [22.0, 40.0, 60.0, 82.0, 112.0],
+    })
+
 
 # ==========================================
 # 3. WALIDACJA ORDER BOOK
 # ==========================================
 def validate_order_book(ob: pd.DataFrame) -> list[str]:
-    """
-    Sprawdza poprawność danych Order Book.
-    Zwraca listę komunikatów o błędach (pusta = dane prawidłowe).
-    """
     errors = []
-
     for col in ["Ask Size", "Spread"]:
         if col not in ob.columns:
             errors.append(f"Brak kolumny: {col}")
@@ -126,7 +180,7 @@ def parse_bucket_end(vol_range_str: str) -> float | None:
         return None
 
 
-def calculate_per_bucket_revenue(order_book: pd.DataFrame, volume_distribution: pd.DataFrame) -> pd.DataFrame:
+def calculate_per_bucket_revenue(order_book: pd.DataFrame, volume_distribution: pd.DataFrame, lot_price: float) -> pd.DataFrame:
     ob = order_book.copy()
     ob["Ask Size"] = pd.to_numeric(ob["Ask Size"], errors="coerce")
     ob["Spread"]   = pd.to_numeric(ob["Spread"],   errors="coerce")
@@ -155,7 +209,7 @@ def calculate_per_bucket_revenue(order_book: pd.DataFrame, volume_distribution: 
             ob_line_used    = int(ob.iloc[-1]["OB Line"])
 
         revenue      = round((filled_volume * assigned_spread) / 2, 2)
-        turnover_usd = filled_volume * LOT_PRICE_USD
+        turnover_usd = filled_volume * lot_price
         rpm          = (revenue / turnover_usd * 1_000_000) if turnover_usd > 0 else 0.0
 
         results.append({
@@ -171,7 +225,7 @@ def calculate_per_bucket_revenue(order_book: pd.DataFrame, volume_distribution: 
     return pd.DataFrame(results)
 
 
-def calculate_fill_rate_per_line(results: pd.DataFrame, order_book: pd.DataFrame) -> pd.DataFrame:
+def calculate_fill_rate_per_line(results: pd.DataFrame, order_book: pd.DataFrame, lot_price: float) -> pd.DataFrame:
     ob = order_book.copy()
     if "OB Line" not in ob.columns:
         ob["OB Line"] = range(1, len(ob) + 1)
@@ -196,7 +250,7 @@ def calculate_fill_rate_per_line(results: pd.DataFrame, order_book: pd.DataFrame
         count  = fill_counts[line]
         volume = fill_volumes[line]
         rev    = fill_revenues[line]
-        turnover = volume * LOT_PRICE_USD
+        turnover = volume * lot_price
         rpm      = (rev / turnover * 1_000_000) if turnover > 0 else 0.0
 
         rows.append({
@@ -212,7 +266,8 @@ def calculate_fill_rate_per_line(results: pd.DataFrame, order_book: pd.DataFrame
 # ==========================================
 # 5. SILNIK INTERFEJSU
 # ==========================================
-def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd.DataFrame, default_ob_df_b: pd.DataFrame = None) -> None:
+def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd.DataFrame,
+                     lot_price: float, default_ob_df_b: pd.DataFrame = None) -> None:
     """Renderuje pełny dashboard dla jednego rynku (zakładki)."""
 
     TABLE_HEIGHT = 300
@@ -238,15 +293,15 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
                 st.error(f"Order Book A — {err}")
             return
 
-        results_a = calculate_per_bucket_revenue(edited_ob_a, vol_dist_df)
+        results_a = calculate_per_bucket_revenue(edited_ob_a, vol_dist_df, lot_price)
 
         if results_a.empty:
             st.warning("Brak wyników dla Scenariusza A. Sprawdź dane wejściowe.")
             return
 
-        total_rev_a     = results_a["Revenue_USD"].sum()
+        total_rev_a      = results_a["Revenue_USD"].sum()
         total_turnover_a = results_a["Turnover_USD"].sum()
-        rpm_a           = (total_rev_a / total_turnover_a * 1_000_000) if total_turnover_a > 0 else 0.0
+        rpm_a            = (total_rev_a / total_turnover_a * 1_000_000) if total_turnover_a > 0 else 0.0
 
         st.markdown(
             f"<div style='margin-bottom:0.5rem;'><b>2. Wyniki A</b> &mdash; "
@@ -277,7 +332,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
                 st.error(f"Order Book B — {err}")
             return
 
-        results_b = calculate_per_bucket_revenue(edited_ob_b, vol_dist_df)
+        results_b = calculate_per_bucket_revenue(edited_ob_b, vol_dist_df, lot_price)
 
         if results_b.empty:
             st.warning("Brak wyników dla Scenariusza B. Sprawdź dane wejściowe.")
@@ -314,8 +369,8 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     # ==========================================
     st.header(f"Fill Rate per OB Line — {tab_name}")
 
-    fill_a = calculate_fill_rate_per_line(results_a, edited_ob_a)
-    fill_b = calculate_fill_rate_per_line(results_b, edited_ob_b)
+    fill_a = calculate_fill_rate_per_line(results_a, edited_ob_a, lot_price)
+    fill_b = calculate_fill_rate_per_line(results_b, edited_ob_b, lot_price)
 
     col_fill_left, col_fill_right = st.columns(2)
 
@@ -530,7 +585,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     st.download_button(
         label=f"Pobierz wyniki {tab_name} jako Excel",
         data=output,
-        file_name=f"symulacja_ab_revenue_{tab_name.lower()}.xlsx",
+        file_name=f"symulacja_ab_revenue_{tab_name.lower().replace(' ', '_').replace(':', '')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key=f"download_btn_{tab_name}",
     )
@@ -546,12 +601,21 @@ def render_instruction_tab() -> None:
 
 ### Dane wejściowe — skąd pochodzi wolumen?
 
-Kalkulator wczytuje dwa pliki CSV (`futures_distribution.csv` i `spot_distribution.csv`), które zawierają historyczny rozkład zleceń klientów pogrupowany w przedziały wolumenowe (buckety). Każdy wiersz opisuje:
+Kalkulator wczytuje pliki CSV z dystrybucjami wolumenu dla poszczególnych instrumentów i rynków. Każdy wiersz opisuje:
 
 - **volume_range** — przedział wielkości zlecenia w lotach, np. `(6, 11]` oznacza zlecenia większe niż 6 i nie większe niż 11 lotów.
 - **filled_volume** — łączny wolumen (w lotach) który historycznie wpadł w ten przedział. To zagregowana liczba z danych transakcyjnych.
 
 Dane te są stałe — odzwierciedlają historyczne zachowanie klientów i nie zmieniają się w zależności od konfiguracji Order Booka.
+
+---
+
+### Obsługiwane instrumenty
+
+| Instrument | Rynki | Wartość 1 Lota |
+|------------|-------|----------------|
+| **XAUUSD** | Futures, Spot | 500 000 USD |
+| **XAGUSD** | Futures, Spot | 400 000 USD |
 
 ---
 
@@ -584,10 +648,12 @@ Dzielenie przez 2 wynika z tego, że spread jest kwotowany jako różnica bid-as
 ### Jak wyliczany jest Turnover?
 
 ```
-Turnover_USD = Filled_Volume x 500 000 USD
+Turnover_USD = Filled_Volume x LOT_PRICE_USD
 ```
 
-Przyjęty standard: **1 Lot XAUUSD = 500 000 USD notional**. Jest to wartość zakodowana na stałe w aplikacji.
+Wartość LOT_PRICE_USD zależy od instrumentu:
+- **XAUUSD**: 1 Lot = 500 000 USD notional
+- **XAGUSD**: 1 Lot = 400 000 USD notional
 
 ---
 
@@ -642,10 +708,13 @@ Słupki pokazują Revenue per bucket dla Scenariusza A (czerwony) i B (zielony).
 
 | Parametr | Wartość | Opis |
 |----------|---------|------|
-| `LOT_PRICE_USD` | 500 000 USD | Wartość notional 1 lota XAUUSD |
+| `LOT_PRICE_XAUUSD` | 500 000 USD | Wartość notional 1 lota XAUUSD |
+| `LOT_PRICE_XAGUSD` | 400 000 USD | Wartość notional 1 lota XAGUSD |
 | Fixed Lines (wykres) | Linie 1-2 | Competitive tier oznaczony różowym tłem |
-| Domyślny OB Futures | 7 linii | Ask Size: 1, 6, 11, 15, 18, 19, 20 / Spready: 31, 42, 57, 84, 115, 164, 247 |
-| Domyślny OB Spot | 10 linii | Ask Size: 1, 6, 10, 15, 17, 18, 18, 25, 35, 44 / Spready: 21, 41, 62, 88, 112, 145, 180, 211, 241, 270 |
+| Domyślny OB XAUUSD Futures | 7 linii | Ask: 1, 6, 11, 15, 18, 19, 20 / Spready: 31, 42, 57, 84, 115, 164, 247 |
+| Domyślny OB XAUUSD Spot | 10 linii | Ask: 1, 4.5, 6, 9, 11.5, 14, 16, 23, 35, 44 / Spready: 20, 44, 65, 82, 112, 145, 180, 211, 241, 270 |
+| Domyślny OB XAGUSD Futures | 7 linii | Ask: 2, 3, 4, 6, 7, 9, 11 / Spready: 46, 52, 66, 80, 96, 110, 132 |
+| Domyślny OB XAGUSD Spot | 5 linii | Ask: 1, 2, 5, 10, 20 / Spready: 22, 40, 60, 82, 112 |
 
 ---
 
@@ -658,31 +727,62 @@ Przycisk "Pobierz wyniki jako Excel" na dole każdej zakładki generuje plik z c
 # 7. GŁÓWNA STRONA I ZAKŁADKI
 # ==========================================
 st.title("A/B Spread & Revenue Calculator")
-st.write("Wybierz rynek z zakładek poniżej, aby porównać scenariusze na odpowiednich wolumenach.")
+st.write("Wybierz instrument i rynek z zakładek poniżej, aby porównać scenariusze na odpowiednich wolumenach.")
 
-df_futures, df_spot = load_distributions()
-default_ob_futures  = load_default_order_book_futures()
-default_ob_spot     = load_default_order_book_spot_a()
-default_ob_spot_b   = load_default_order_book_spot_b()
+# Ładowanie danych
+df_xau_futures, df_xau_spot = load_distributions_xauusd()
+df_xag_futures, df_xag_spot = load_distributions_xagusd()
 
-if not df_futures.empty and not df_spot.empty:
-    tab_future, tab_spot, tab_instrukcja = st.tabs([
-        "Rynek: Futures",
-        "Rynek: Spot",
-        "Instrukcja",
-    ])
+# Domyślne Order Booki — XAUUSD
+ob_xau_futures   = load_default_ob_xauusd_futures()
+ob_xau_spot_a    = load_default_ob_xauusd_spot_a()
+ob_xau_spot_b    = load_default_ob_xauusd_spot_b()
 
-    with tab_future:
-        render_dashboard(df_futures, "Futures", default_ob_futures)
+# Domyślne Order Booki — XAGUSD
+ob_xag_futures   = load_default_ob_xagusd_futures()
+ob_xag_spot_a    = load_default_ob_xagusd_spot_a()
+ob_xag_spot_b    = load_default_ob_xagusd_spot_b()
 
-    with tab_spot:
-        render_dashboard(df_spot, "Spot", default_ob_spot, default_ob_spot_b)
+# Sprawdzenie dostępności danych
+xau_ok = not df_xau_futures.empty and not df_xau_spot.empty
+xag_ok = not df_xag_futures.empty and not df_xag_spot.empty
 
-    with tab_instrukcja:
+if xau_ok or xag_ok:
+    tab_names = []
+    if xau_ok:
+        tab_names += ["Rynek Futures XAUUSD", "Rynek Spot XAUUSD"]
+    if xag_ok:
+        tab_names += ["Rynek Futures XAGUSD", "Rynek Spot XAGUSD"]
+    tab_names.append("Instrukcja")
+
+    tabs = st.tabs(tab_names)
+
+    idx = 0
+
+    if xau_ok:
+        with tabs[idx]:
+            render_dashboard(df_xau_futures, "Futures XAUUSD", ob_xau_futures, LOT_PRICE_XAUUSD)
+        idx += 1
+
+        with tabs[idx]:
+            render_dashboard(df_xau_spot, "Spot XAUUSD", ob_xau_spot_a, LOT_PRICE_XAUUSD, ob_xau_spot_b)
+        idx += 1
+
+    if xag_ok:
+        with tabs[idx]:
+            render_dashboard(df_xag_futures, "Futures XAGUSD", ob_xag_futures, LOT_PRICE_XAGUSD)
+        idx += 1
+
+        with tabs[idx]:
+            render_dashboard(df_xag_spot, "Spot XAGUSD", ob_xag_spot_a, LOT_PRICE_XAGUSD, ob_xag_spot_b)
+        idx += 1
+
+    with tabs[idx]:
         render_instruction_tab()
 
 else:
     st.warning(
-        "Oczekuję na pliki. Upewnij się, że wgrałeś "
-        "`futures_distribution.csv` oraz `spot_distribution.csv`."
+        "Oczekuję na pliki. Upewnij się, że wgrałeś pliki dystrybucji "
+        "(`futures_distribution.csv`, `spot_distribution.csv` dla XAUUSD i/lub "
+        "`futures_distribution_XAGUSD.csv`, `spot_distribution_XAGUSD.csv` dla XAGUSD)."
     )
