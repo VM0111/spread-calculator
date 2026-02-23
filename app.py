@@ -345,7 +345,16 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             f"<span style='color:#888;font-size:0.9em;margin-left:10px;'>| RPM: <b>${rpm_a:,.2f}</b></span></div>",
             unsafe_allow_html=True,
         )
-        st.dataframe(results_a, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
+        st.dataframe(
+            results_a, 
+            use_container_width=True, 
+            hide_index=True, 
+            height=TABLE_HEIGHT,
+            column_config={
+                "Turnover_USD": st.column_config.NumberColumn("Turnover_USD", format="%,.2f"),
+                "Revenue_USD": st.column_config.NumberColumn("Revenue_USD", format="%,.2f")
+            }
+        )
 
     # --- Scenariusz B (Optimized) ---
     with col_right:
@@ -395,7 +404,16 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             f"<span style='color:{rpm_color};font-size:0.8em;font-weight:bold;'>({rpm_sign}${diff_rpm:,.2f})</span></div>",
             unsafe_allow_html=True,
         )
-        st.dataframe(results_b, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
+        st.dataframe(
+            results_b, 
+            use_container_width=True, 
+            hide_index=True, 
+            height=TABLE_HEIGHT,
+            column_config={
+                "Turnover_USD": st.column_config.NumberColumn("Turnover_USD", format="%,.2f"),
+                "Revenue_USD": st.column_config.NumberColumn("Revenue_USD", format="%,.2f")
+            }
+        )
 
     st.divider()
 
