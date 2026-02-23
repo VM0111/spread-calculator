@@ -309,22 +309,6 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     TABLE_HEIGHT = 300
     col_left, col_right = st.columns(2)
     
-    # Konfiguracja separatorów tysięcznych w Streamlit DataFrames
-    res_col_config = {
-        "Turnover_USD": st.column_config.NumberColumn("Turnover_USD", format=",.2f"),
-        "Revenue_USD": st.column_config.NumberColumn("Revenue_USD", format=",.2f"),
-        "Filled_Volume": st.column_config.NumberColumn("Filled_Volume", format=",.2f"),
-        "RPM": st.column_config.NumberColumn("RPM", format=",.2f"),
-        "Assigned_Spread": st.column_config.NumberColumn("Assigned_Spread", format=",.2f")
-    }
-    
-    fill_col_config = {
-        "Fill Volume": st.column_config.NumberColumn("Fill Volume", format=",.2f"),
-        "Fill Count": st.column_config.NumberColumn("Fill Count", format=",.0f"),
-        "Fill Volume (%)": st.column_config.NumberColumn("Fill Volume (%)", format=",.1f"),
-        "RPM": st.column_config.NumberColumn("RPM", format=",.2f"),
-    }
-
     # --- Scenariusz A (Current) ---
     with col_left:
         st.header(f"Scenariusz A — {tab_name} (Current)")
@@ -361,7 +345,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             f"<span style='color:#888;font-size:0.9em;margin-left:10px;'>| RPM: <b>${rpm_a:,.2f}</b></span></div>",
             unsafe_allow_html=True,
         )
-        st.dataframe(results_a, use_container_width=True, hide_index=True, height=TABLE_HEIGHT, column_config=res_col_config)
+        st.dataframe(results_a, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
 
     # --- Scenariusz B (Optimized) ---
     with col_right:
@@ -411,7 +395,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             f"<span style='color:{rpm_color};font-size:0.8em;font-weight:bold;'>({rpm_sign}${diff_rpm:,.2f})</span></div>",
             unsafe_allow_html=True,
         )
-        st.dataframe(results_b, use_container_width=True, hide_index=True, height=TABLE_HEIGHT, column_config=res_col_config)
+        st.dataframe(results_b, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
 
     st.divider()
 
@@ -427,11 +411,11 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
 
     with col_fill_left:
         st.markdown("**Scenariusz A (Current)**")
-        st.dataframe(fill_a, use_container_width=True, hide_index=True, column_config=fill_col_config)
+        st.dataframe(fill_a, use_container_width=True, hide_index=True)
 
     with col_fill_right:
         st.markdown("**Scenariusz B (Optimized)**")
-        st.dataframe(fill_b, use_container_width=True, hide_index=True, column_config=fill_col_config)
+        st.dataframe(fill_b, use_container_width=True, hide_index=True)
 
     fig_fill = make_subplots(specs=[[{"secondary_y": True}]])
 
