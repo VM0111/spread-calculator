@@ -311,18 +311,18 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     
     # Konfiguracja separatorów tysięcznych w Streamlit DataFrames
     res_col_config = {
-        "Turnover_USD": st.column_config.NumberColumn("Turnover_USD", format="%,.2f"),
-        "Revenue_USD": st.column_config.NumberColumn("Revenue_USD", format="%,.2f"),
-        "Filled_Volume": st.column_config.NumberColumn("Filled_Volume", format="%,.2f"),
-        "RPM": st.column_config.NumberColumn("RPM", format="%,.2f"),
-        "Assigned_Spread": st.column_config.NumberColumn("Assigned_Spread", format="%,.2f")
+        "Turnover_USD": st.column_config.NumberColumn("Turnover_USD", format=",.2f"),
+        "Revenue_USD": st.column_config.NumberColumn("Revenue_USD", format=",.2f"),
+        "Filled_Volume": st.column_config.NumberColumn("Filled_Volume", format=",.2f"),
+        "RPM": st.column_config.NumberColumn("RPM", format=",.2f"),
+        "Assigned_Spread": st.column_config.NumberColumn("Assigned_Spread", format=",.2f")
     }
     
     fill_col_config = {
-        "Fill Volume": st.column_config.NumberColumn("Fill Volume", format="%,.2f"),
-        "Fill Count": st.column_config.NumberColumn("Fill Count", format="%,.0f"),
-        "Fill Volume (%)": st.column_config.NumberColumn("Fill Volume (%)", format="%,.1f"),
-        "RPM": st.column_config.NumberColumn("RPM", format="%,.2f"),
+        "Fill Volume": st.column_config.NumberColumn("Fill Volume", format=",.2f"),
+        "Fill Count": st.column_config.NumberColumn("Fill Count", format=",.0f"),
+        "Fill Volume (%)": st.column_config.NumberColumn("Fill Volume (%)", format=",.1f"),
+        "RPM": st.column_config.NumberColumn("RPM", format=",.2f"),
     }
 
     # --- Scenariusz A (Current) ---
@@ -696,6 +696,7 @@ Zlecenie z bucketu `(6, 11]` (górna granica = 11) trafi w **linię 3**, bo dopi
 ---
 
 ### Jak wyliczany jest Revenue?
+
 Dzielenie przez 2 wynika z tego, że spread jest kwotowany jako różnica bid-ask, a LP zarabia połowę spreadu na każdej stronie transakcji.
 
 Wartość Spread_Multiplier zależy od instrumentu:
@@ -712,6 +713,7 @@ Wartość LOT_PRICE_USD zależy od instrumentu:
 ---
 
 ### Jak wyliczany jest RPM?
+
 RPM (Revenue per Million) to przychód w dolarach na każdy 1 milion dolarów obrotu. Jest to kluczowy wskaźnik efektywności — uniezależnia ocenę od rozmiaru wolumenu i pozwala porównywać różne konfiguracje Order Booka oraz różne rynki na jednej skali. RPM jest liczony zarówno per bucket (tabela wyników), jak i per linia OB (tabela Fill Rate).
 
 ---
