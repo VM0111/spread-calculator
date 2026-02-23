@@ -381,9 +381,18 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
         total_turnover_b = results_b["Turnover_USD"].sum()
         rpm_b            = (total_rev_b / total_turnover_b * 1_000_000) if total_turnover_b > 0 else 0.0
 
+        # Wyliczanie różnicy w dolarach
         diff_vs_a  = total_rev_b - total_rev_a
         diff_color = "#00CC96" if diff_vs_a >= 0 else "#EF553B"
         diff_sign  = "+" if diff_vs_a >= 0 else ""
+
+        # Wyliczanie różnicy w procentach
+        if total_rev_a > 0:
+            pct_diff_vs_a = (diff_vs_a / total_rev_a) * 100
+        elif total_rev_a == 0 and total_rev_b > 0:
+            pct_diff_vs_a = 100.0
+        else:
+            pct_diff_vs_a = 0.0
 
         diff_rpm  = rpm_b - rpm_a
         rpm_color = "#00CC96" if diff_rpm >= 0 else "#EF553B"
@@ -394,7 +403,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             f"Total Revenue: <span style='color:#00CC96;font-size:1.1em;font-weight:bold;'>"
             f"${total_rev_b:,.2f}</span> "
             f"<span style='color:{diff_color};font-size:0.9em;font-weight:bold;'>"
-            f"({diff_sign}${diff_vs_a:,.2f} vs A)</span><br>"
+            f"({diff_sign}${diff_vs_a:,.2f} / {diff_sign}{pct_diff_vs_a:,.2f}% vs A)</span><br>"
             f"<span style='color:#888;font-size:0.9em;'>RPM: <b>${rpm_b:,.0f}</b></span> "
             f"<span style='color:{rpm_color};font-size:0.8em;font-weight:bold;'>({rpm_sign}${diff_rpm:,.0f})</span></div>",
             unsafe_allow_html=True,
