@@ -37,6 +37,15 @@ LOT_PRICE_XAGUSD = 400_000.0   # 1 Lot XAGUSD = 400 000 USD
 @st.cache_data
 def load_csv_auto_sep(path: str) -> pd.DataFrame:
     """Ładuje CSV automatycznie, omijając problem z przecinkami wewnątrz przedziału (np. (0, 0.1])."""
+    
+    def clean_bucket_name(val):
+        """Czyszczenie nazwy przedziału np. (0, 0.1] na 0 - 0.1"""
+        val = str(val).replace('(', '').replace(']', '').replace('"', '').replace("'", "").strip()
+        parts = [p.strip() for p in val.split(',')]
+        if len(parts) == 2:
+            return f"{parts[0]} - {parts[1]}"
+        return val
+
     try:
         with open(path, 'r', encoding='utf-8-sig') as f:
             lines = [line.strip() for line in f if line.strip()]
@@ -53,7 +62,7 @@ def load_csv_auto_sep(path: str) -> pd.DataFrame:
                 vol_range = line[:last_sep_idx].strip().strip('"').strip("'")
                 filled_vol = line[last_sep_idx+1:].strip()
                 data.append({
-                    "volume_range": vol_range,
+                    "volume_range": clean_bucket_name(vol_range),
                     "filled_volume": filled_vol
                 })
                 
@@ -135,8 +144,6 @@ def load_default_ob_xauusd_spot_b() -> pd.DataFrame:
 
 # ==========================================
 # DOMYŚLNE ORDER BOOKI — XAGUSD
-# Futures: z OB_Futures_XAGUSD.xlsx (7 linii)
-# Spot:    z OB_Spot_XAGUSD.xlsx    (5 linii)
 # ==========================================
 @st.cache_data
 def load_default_ob_xagusd_futures() -> pd.DataFrame:
@@ -194,7 +201,9 @@ def validate_order_book(ob: pd.DataFrame) -> list[str]:
 def parse_bucket_end(vol_range_str: str) -> float | None:
     try:
         cleaned = str(vol_range_str).replace('"', "").replace("'", "").strip()
-        if "," in cleaned:
+        if "-" in cleaned:
+            end_str = cleaned.split("-")[1]
+        elif "," in cleaned:
             end_str = cleaned.split(",")[1]
         elif ";" in cleaned:
             end_str = cleaned.split(";")[1]
@@ -299,6 +308,22 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
 
     TABLE_HEIGHT = 300
     col_left, col_right = st.columns(2)
+    
+    # Konfiguracja separatorów tysięcznych w Streamlit DataFrames
+    res_col_config = {
+        "Turnover_USD": st.column_config.NumberColumn("Turnover_USD", format="%,.2f"),
+        "Revenue_USD": st.column_config.NumberColumn("Revenue_USD", format="%,.2f"),
+        "Filled_Volume": st.column_config.NumberColumn("Filled_Volume", format="%,.2f"),
+        "RPM": st.column_config.NumberColumn("RPM", format="%,.2f"),
+        "Assigned_Spread": st.column_config.NumberColumn("Assigned_Spread", format="%,.2f")
+    }
+    
+    fill_col_config = {
+        "Fill Volume": st.column_config.NumberColumn("Fill Volume", format="%,.2f"),
+        "Fill Count": st.column_config.NumberColumn("Fill Count", format="%,.0f"),
+        "Fill Volume (%)": st.column_config.NumberColumn("Fill Volume (%)", format="%,.1f"),
+        "RPM": st.column_config.NumberColumn("RPM", format="%,.2f"),
+    }
 
     # --- Scenariusz A (Current) ---
     with col_left:
@@ -336,7 +361,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             f"<span style='color:#888;font-size:0.9em;margin-left:10px;'>| RPM: <b>${rpm_a:,.2f}</b></span></div>",
             unsafe_allow_html=True,
         )
-        st.dataframe(results_a, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
+        st.dataframe(results_a, use_container_width=True, hide_index=True, height=TABLE_HEIGHT, column_config=res_col_config)
 
     # --- Scenariusz B (Optimized) ---
     with col_right:
@@ -386,7 +411,7 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             f"<span style='color:{rpm_color};font-size:0.8em;font-weight:bold;'>({rpm_sign}${diff_rpm:,.2f})</span></div>",
             unsafe_allow_html=True,
         )
-        st.dataframe(results_b, use_container_width=True, hide_index=True, height=TABLE_HEIGHT)
+        st.dataframe(results_b, use_container_width=True, hide_index=True, height=TABLE_HEIGHT, column_config=res_col_config)
 
     st.divider()
 
@@ -402,11 +427,11 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
 
     with col_fill_left:
         st.markdown("**Scenariusz A (Current)**")
-        st.dataframe(fill_a, use_container_width=True, hide_index=True)
+        st.dataframe(fill_a, use_container_width=True, hide_index=True, column_config=fill_col_config)
 
     with col_fill_right:
         st.markdown("**Scenariusz B (Optimized)**")
-        st.dataframe(fill_b, use_container_width=True, hide_index=True)
+        st.dataframe(fill_b, use_container_width=True, hide_index=True, column_config=fill_col_config)
 
     fig_fill = make_subplots(specs=[[{"secondary_y": True}]])
 
@@ -602,10 +627,19 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     st.write("---")
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        results_a.to_excel(writer, sheet_name=f"Scenariusz A ({tab_name})", index=False)
-        results_b.to_excel(writer, sheet_name=f"Scenariusz B ({tab_name})", index=False)
-        fill_a.to_excel(writer,    sheet_name=f"Fill Rate A ({tab_name})",  index=False)
-        fill_b.to_excel(writer,    sheet_name=f"Fill Rate B ({tab_name})",  index=False)
+        results_a.to_excel(writer, sheet_name=f"Scenariusz A", index=False)
+        results_b.to_excel(writer, sheet_name=f"Scenariusz B", index=False)
+        fill_a.to_excel(writer,    sheet_name=f"Fill Rate A",  index=False)
+        fill_b.to_excel(writer,    sheet_name=f"Fill Rate B",  index=False)
+
+        # Aplikujemy formatowanie tysięczne i finansowe bezpośrednio do arkuszy Excel
+        for sheet_name in writer.sheets:
+            worksheet = writer.sheets[sheet_name]
+            for row in worksheet.iter_rows(min_row=2):
+                for cell in row:
+                    if isinstance(cell.value, (int, float)):
+                        cell.number_format = '#,##0.00'
+
     output.seek(0)
 
     st.download_button(
@@ -662,10 +696,6 @@ Zlecenie z bucketu `(6, 11]` (górna granica = 11) trafi w **linię 3**, bo dopi
 ---
 
 ### Jak wyliczany jest Revenue?
-
-Revenue = (Filled_Volume x Assigned_Spread x Spread_Multiplier) / 2
-
-
 Dzielenie przez 2 wynika z tego, że spread jest kwotowany jako różnica bid-ask, a LP zarabia połowę spreadu na każdej stronie transakcji.
 
 Wartość Spread_Multiplier zależy od instrumentu:
@@ -675,10 +705,6 @@ Wartość Spread_Multiplier zależy od instrumentu:
 ---
 
 ### Jak wyliczany jest Turnover?
-
-Turnover_USD = Filled_Volume x LOT_PRICE_USD
-
-
 Wartość LOT_PRICE_USD zależy od instrumentu:
 - **XAUUSD**: 1 Lot = 500 000 USD notional
 - **XAGUSD**: 1 Lot = 400 000 USD notional
@@ -686,10 +712,6 @@ Wartość LOT_PRICE_USD zależy od instrumentu:
 ---
 
 ### Jak wyliczany jest RPM?
-
-RPM = (Revenue_USD / Turnover_USD) x 1 000 000
-
-
 RPM (Revenue per Million) to przychód w dolarach na każdy 1 milion dolarów obrotu. Jest to kluczowy wskaźnik efektywności — uniezależnia ocenę od rozmiaru wolumenu i pozwala porównywać różne konfiguracje Order Booka oraz różne rynki na jednej skali. RPM jest liczony zarówno per bucket (tabela wyników), jak i per linia OB (tabela Fill Rate).
 
 ---
