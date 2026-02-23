@@ -36,14 +36,17 @@ LOT_PRICE_XAGUSD = 400_000.0   # 1 Lot XAGUSD = 400 000 USD
 # ==========================================
 @st.cache_data
 def load_csv_auto_sep(path: str) -> pd.DataFrame:
-    """Ładuje CSV automatycznie wykrywając separator (; lub ,)."""
+    """Ładuje CSV automatycznie wykrywając separator (; lub ,). Czyści nazwy kolumn."""
     try:
-        df = pd.read_csv(path, sep=";")
+        df = pd.read_csv(path, sep=";", encoding="utf-8-sig")
         if len(df.columns) >= 2:
+            df.columns = [c.strip().strip(",").strip() for c in df.columns]
             return df
     except Exception:
         pass
-    return pd.read_csv(path, sep=",")
+    df = pd.read_csv(path, sep=",", encoding="utf-8-sig")
+    df.columns = [c.strip().strip(",").strip() for c in df.columns]
+    return df
 
 
 @st.cache_data
