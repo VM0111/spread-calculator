@@ -36,17 +36,34 @@ LOT_PRICE_XAGUSD = 400_000.0   # 1 Lot XAGUSD = 400 000 USD
 # ==========================================
 @st.cache_data
 def load_csv_auto_sep(path: str) -> pd.DataFrame:
-    """Ładuje CSV automatycznie wykrywając separator (; lub ,). Czyści nazwy kolumn."""
+    """Ładuje CSV automatycznie, omijając problem z przecinkami wewnątrz przedziału (np. (0, 0.1])."""
     try:
-        df = pd.read_csv(path, sep=";", encoding="utf-8-sig")
-        if len(df.columns) >= 2:
-            df.columns = [c.strip().strip(",").strip() for c in df.columns]
-            return df
-    except Exception:
-        pass
-    df = pd.read_csv(path, sep=",", encoding="utf-8-sig")
-    df.columns = [c.strip().strip(",").strip() for c in df.columns]
-    return df
+        with open(path, 'r', encoding='utf-8-sig') as f:
+            lines = [line.strip() for line in f if line.strip()]
+            
+        if not lines:
+            return pd.DataFrame(columns=["volume_range", "filled_volume"])
+            
+        sep = ";" if ";" in lines[0] else ","
+        
+        data = []
+        for line in lines[1:]:
+            last_sep_idx = line.rfind(sep)
+            if last_sep_idx != -1:
+                vol_range = line[:last_sep_idx].strip().strip('"').strip("'")
+                filled_vol = line[last_sep_idx+1:].strip()
+                data.append({
+                    "volume_range": vol_range,
+                    "filled_volume": filled_vol
+                })
+                
+        df = pd.DataFrame(data)
+        if not df.empty:
+            df["filled_volume"] = pd.to_numeric(df["filled_volume"], errors="coerce")
+            
+        return df
+    except Exception as e:
+        return pd.DataFrame(columns=["volume_range", "filled_volume"])
 
 
 @st.cache_data
@@ -177,7 +194,14 @@ def validate_order_book(ob: pd.DataFrame) -> list[str]:
 def parse_bucket_end(vol_range_str: str) -> float | None:
     try:
         cleaned = str(vol_range_str).replace('"', "").replace("'", "").strip()
-        end_str = cleaned.split(",")[1].strip(" )]")
+        if "," in cleaned:
+            end_str = cleaned.split(",")[1]
+        elif ";" in cleaned:
+            end_str = cleaned.split(";")[1]
+        else:
+            end_str = cleaned
+            
+        end_str = end_str.replace(")", "").replace("]", "").strip()
         return float(end_str)
     except (IndexError, ValueError):
         return None
@@ -639,9 +663,8 @@ Zlecenie z bucketu `(6, 11]` (górna granica = 11) trafi w **linię 3**, bo dopi
 
 ### Jak wyliczany jest Revenue?
 
-```
 Revenue = (Filled_Volume x Assigned_Spread x Spread_Multiplier) / 2
-```
+
 
 Dzielenie przez 2 wynika z tego, że spread jest kwotowany jako różnica bid-ask, a LP zarabia połowę spreadu na każdej stronie transakcji.
 
@@ -653,9 +676,8 @@ Wartość Spread_Multiplier zależy od instrumentu:
 
 ### Jak wyliczany jest Turnover?
 
-```
 Turnover_USD = Filled_Volume x LOT_PRICE_USD
-```
+
 
 Wartość LOT_PRICE_USD zależy od instrumentu:
 - **XAUUSD**: 1 Lot = 500 000 USD notional
@@ -665,9 +687,8 @@ Wartość LOT_PRICE_USD zależy od instrumentu:
 
 ### Jak wyliczany jest RPM?
 
-```
 RPM = (Revenue_USD / Turnover_USD) x 1 000 000
-```
+
 
 RPM (Revenue per Million) to przychód w dolarach na każdy 1 milion dolarów obrotu. Jest to kluczowy wskaźnik efektywności — uniezależnia ocenę od rozmiaru wolumenu i pozwala porównywać różne konfiguracje Order Booka oraz różne rynki na jednej skali. RPM jest liczony zarówno per bucket (tabela wyników), jak i per linia OB (tabela Fill Rate).
 
