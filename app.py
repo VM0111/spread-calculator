@@ -36,12 +36,13 @@ LOT_PRICE_XAGUSD = 400_000.0   # 1 Lot XAGUSD = 400 000 USD
 # ==========================================
 @st.cache_data
 def load_csv_auto_sep(path: str) -> pd.DataFrame:
-    """Ładuje CSV automatycznie, omijając problem z przecinkami wewnątrz przedziału (np. (0, 0.1])."""
+    """Ładuje CSV, poprawnie obsługując przedziały z przecinkami lub spacją (np. (0.0 0.1] lub (0, 0.1])."""
     
     def clean_bucket_name(val):
-        """Czyszczenie nazwy przedziału np. (0, 0.1] na 0 - 0.1"""
+        """Czyści nawiasy i zamienia wnętrze na ujednolicony format 'START - END'"""
         val = str(val).replace('(', '').replace(']', '').replace('"', '').replace("'", "").strip()
-        parts = [p.strip() for p in val.split(',')]
+        # Zamieniamy ewentualny przecinek na spację (dla starego formatu), a następnie dzielimy po spacji
+        parts = val.replace(',', ' ').split()
         if len(parts) == 2:
             return f"{parts[0]} - {parts[1]}"
         return val
@@ -200,18 +201,27 @@ def validate_order_book(ob: pd.DataFrame) -> list[str]:
 # ==========================================
 def parse_bucket_end(vol_range_str: str) -> float | None:
     try:
+        # Usuń całkowicie wszelkie możliwe nawiasy oraz cudzysłowy
         cleaned = str(vol_range_str).replace('"', "").replace("'", "").strip()
+        cleaned = cleaned.replace(")", "").replace("]", "").replace("(", "").replace("[", "")
+        
+        # Jeśli znajdzie '-', weź drugą część (prawą stronę przedziału)
         if "-" in cleaned:
             end_str = cleaned.split("-")[1]
+        # Sprawdzanie alternatywnych separatorów
         elif "," in cleaned:
             end_str = cleaned.split(",")[1]
         elif ";" in cleaned:
             end_str = cleaned.split(";")[1]
         else:
-            end_str = cleaned
-            
-        end_str = end_str.replace(")", "").replace("]", "").strip()
-        return float(end_str)
+            # W ostateczności podziel po spacjach np. dla "0.0 0.1" i weź drugą wartość
+            parts = cleaned.split()
+            if len(parts) == 2:
+                end_str = parts[1]
+            else:
+                end_str = cleaned
+                
+        return float(end_str.strip())
     except (IndexError, ValueError):
         return None
 
@@ -346,7 +356,6 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             unsafe_allow_html=True,
         )
         
-        # POPRAWKA 1: Użycie .style.format() zamiast st.column_config
         st.dataframe(
             results_a.style.format({
                 "Turnover_USD": "{:,.2f}",
@@ -406,7 +415,6 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             unsafe_allow_html=True,
         )
         
-        # POPRAWKA 2: Użycie .style.format() zamiast st.column_config
         st.dataframe(
             results_b.style.format({
                 "Turnover_USD": "{:,.2f}",
@@ -667,7 +675,7 @@ def render_instruction_tab() -> None:
 
 Kalkulator wczytuje pliki CSV z dystrybucjami wolumenu dla poszczególnych instrumentów i rynków. Każdy wiersz opisuje:
 
-- **volume_range** — przedział wielkości zlecenia w lotach, np. `(6, 11]` oznacza zlecenia większe niż 6 i nie większe niż 11 lotów.
+- **volume_range** — przedział wielkości zlecenia w lotach, np. `(0.0 0.1]` oznacza zlecenia większe niż 0.0 i nie większe niż 0.1 lota.
 - **filled_volume** — łączny wolumen (w lotach) który historycznie wpadł w ten przedział. To zagregowana liczba z danych transakcyjnych.
 
 Dane te są stałe — odzwierciedlają historyczne zachowanie klientów i nie zmieniają się w zależności od konfiguracji Order Booka.
