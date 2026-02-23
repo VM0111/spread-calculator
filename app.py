@@ -292,6 +292,21 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     TABLE_HEIGHT = 300
     col_left, col_right = st.columns(2)
     
+    # Formatowanie kolumn dla głównych tabel (Wyniki A i Wyniki B)
+    results_format_dict = {
+        "Filled_Volume": "{:,.2f}",      # Separatory tysięcy + 2 miejsca po przecinku
+        "Assigned_Spread": "{:,.0f}",    # Brak miejsc po przecinku
+        "Turnover_USD": "{:,.2f}",       # Separatory tysięcy + 2 miejsca po przecinku
+        "Revenue_USD": "{:,.2f}",        # Separatory tysięcy + 2 miejsca po przecinku
+        "RPM": "{:,.0f}"                 # Brak miejsc po przecinku (z separatorami dla czytelności większych kwot)
+    }
+
+    # Formatowanie kolumn dla tabel Fill Rate
+    fill_rate_format_dict = {
+        "Fill Volume": "{:,.2f}",        # Separatory tysięcy + 2 miejsca po przecinku
+        "RPM": "{:,.0f}"                 # Brak miejsc po przecinku
+    }
+
     # --- Scenariusz A (Current) ---
     with col_left:
         st.header(f"Scenariusz A — {tab_name} (Current)")
@@ -325,16 +340,12 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             f"<div style='margin-bottom:0.5rem;'><b>2. Wyniki A</b> &mdash; "
             f"Total Revenue: <span style='color:#EF553B;font-size:1.1em;font-weight:bold;'>"
             f"${total_rev_a:,.2f}</span> "
-            f"<span style='color:#888;font-size:0.9em;margin-left:10px;'>| RPM: <b>${rpm_a:,.2f}</b></span></div>",
+            f"<span style='color:#888;font-size:0.9em;margin-left:10px;'>| RPM: <b>${rpm_a:,.0f}</b></span></div>",
             unsafe_allow_html=True,
         )
         
-        # Zachowane formatowanie separatorów .style.format()
         st.dataframe(
-            results_a.style.format({
-                "Turnover_USD": "{:,.2f}",
-                "Revenue_USD": "{:,.2f}"
-            }), 
+            results_a.style.format(results_format_dict), 
             use_container_width=True, 
             hide_index=True, 
             height=TABLE_HEIGHT
@@ -384,17 +395,13 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             f"${total_rev_b:,.2f}</span> "
             f"<span style='color:{diff_color};font-size:0.9em;font-weight:bold;'>"
             f"({diff_sign}${diff_vs_a:,.2f} vs A)</span><br>"
-            f"<span style='color:#888;font-size:0.9em;'>RPM: <b>${rpm_b:,.2f}</b></span> "
-            f"<span style='color:{rpm_color};font-size:0.8em;font-weight:bold;'>({rpm_sign}${diff_rpm:,.2f})</span></div>",
+            f"<span style='color:#888;font-size:0.9em;'>RPM: <b>${rpm_b:,.0f}</b></span> "
+            f"<span style='color:{rpm_color};font-size:0.8em;font-weight:bold;'>({rpm_sign}${diff_rpm:,.0f})</span></div>",
             unsafe_allow_html=True,
         )
         
-        # Zachowane formatowanie separatorów .style.format()
         st.dataframe(
-            results_b.style.format({
-                "Turnover_USD": "{:,.2f}",
-                "Revenue_USD": "{:,.2f}"
-            }), 
+            results_b.style.format(results_format_dict), 
             use_container_width=True, 
             hide_index=True, 
             height=TABLE_HEIGHT
@@ -414,11 +421,19 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
 
     with col_fill_left:
         st.markdown("**Scenariusz A (Current)**")
-        st.dataframe(fill_a, use_container_width=True, hide_index=True)
+        st.dataframe(
+            fill_a.style.format(fill_rate_format_dict), 
+            use_container_width=True, 
+            hide_index=True
+        )
 
     with col_fill_right:
         st.markdown("**Scenariusz B (Optimized)**")
-        st.dataframe(fill_b, use_container_width=True, hide_index=True)
+        st.dataframe(
+            fill_b.style.format(fill_rate_format_dict), 
+            use_container_width=True, 
+            hide_index=True
+        )
 
     fig_fill = make_subplots(specs=[[{"secondary_y": True}]])
 
