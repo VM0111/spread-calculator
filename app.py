@@ -345,15 +345,16 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             f"<span style='color:#888;font-size:0.9em;margin-left:10px;'>| RPM: <b>${rpm_a:,.2f}</b></span></div>",
             unsafe_allow_html=True,
         )
+        
+        # POPRAWKA 1: Użycie .style.format() zamiast st.column_config
         st.dataframe(
-            results_a, 
+            results_a.style.format({
+                "Turnover_USD": "{:,.2f}",
+                "Revenue_USD": "{:,.2f}"
+            }), 
             use_container_width=True, 
             hide_index=True, 
-            height=TABLE_HEIGHT,
-            column_config={
-                "Turnover_USD": st.column_config.NumberColumn("Turnover_USD", format="%,.2f"),
-                "Revenue_USD": st.column_config.NumberColumn("Revenue_USD", format="%,.2f")
-            }
+            height=TABLE_HEIGHT
         )
 
     # --- Scenariusz B (Optimized) ---
@@ -404,15 +405,16 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             f"<span style='color:{rpm_color};font-size:0.8em;font-weight:bold;'>({rpm_sign}${diff_rpm:,.2f})</span></div>",
             unsafe_allow_html=True,
         )
+        
+        # POPRAWKA 2: Użycie .style.format() zamiast st.column_config
         st.dataframe(
-            results_b, 
+            results_b.style.format({
+                "Turnover_USD": "{:,.2f}",
+                "Revenue_USD": "{:,.2f}"
+            }), 
             use_container_width=True, 
             hide_index=True, 
-            height=TABLE_HEIGHT,
-            column_config={
-                "Turnover_USD": st.column_config.NumberColumn("Turnover_USD", format="%,.2f"),
-                "Revenue_USD": st.column_config.NumberColumn("Revenue_USD", format="%,.2f")
-            }
+            height=TABLE_HEIGHT
         )
 
     st.divider()
