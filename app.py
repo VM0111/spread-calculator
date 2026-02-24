@@ -7,7 +7,6 @@ from plotly.subplots import make_subplots
 # ==========================================
 # 0. AUTOMATYCZNE CZYSZCZENIE PLIKÓW CSV
 # ==========================================
-# Próbujemy zaimportować i uruchomić skrypt czyszczący, jeśli istnieje w repozytorium
 try:
     import clean_csv
     clean_csv.clean_all()
@@ -192,9 +191,31 @@ def validate_order_book(ob: pd.DataFrame) -> list[str]:
 # 4. SILNIK KALKULACJI
 # ==========================================
 def parse_bucket_end(vol_range_str: str) -> float | None:
-    """Oczekuje wyczyszczonego formatu START - END"""
+    """
+    Obsługuje wszystkie warianty formatowania przedziałów:
+      - '0.0 - 0.1'      (format po clean_csv)
+      - '(0.0, 0.1]'     (format pandas interval z przecinkiem)
+      - '(0.0 0.1]'      (format pandas interval ze spacją)
+      - '0.0 0.1'        (surowy format ze spacją, bez nawiasów)
+    """
     try:
-        end_str = str(vol_range_str).split("-")[1].strip()
+        s = str(vol_range_str).strip()
+        # Usuń nawiasy interwałowe
+        s = s.replace('(', '').replace(')', '').replace('[', '').replace(']', '').strip()
+
+        if ' - ' in s:
+            # Format po clean_csv: "0.0 - 0.1"
+            end_str = s.split(' - ')[1].strip()
+        elif ',' in s:
+            # Format pandas z przecinkiem: "0.0, 0.1"
+            end_str = s.split(',')[1].strip()
+        else:
+            # Format ze spacją: "0.0 0.1"
+            parts = s.split()
+            if len(parts) < 2:
+                return None
+            end_str = parts[-1].strip()
+
         return float(end_str)
     except (IndexError, ValueError):
         return None
