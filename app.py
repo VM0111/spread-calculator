@@ -10,6 +10,7 @@ from plotly.subplots import make_subplots
 try:
     import clean_csv
     clean_csv.clean_all()
+    st.cache_data.clear()
 except ImportError:
     print("Brak pliku clean_csv.py — pomijam automatyczne czyszczenie.")
 
