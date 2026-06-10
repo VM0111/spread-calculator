@@ -11,7 +11,12 @@ def clean_range_string(val):
     val = str(val).replace('(', '').replace(']', '').replace('[', '').replace(')', '').replace('"', '').replace("'", "").strip()
     parts = val.replace(',', ' ').split()
     if len(parts) == 2:
-        return f"{parts[0]} - {parts[1]}"
+        try:
+            start = float(parts[0])
+            end   = float(parts[1])
+            return f"{start} - {end}"
+        except ValueError:
+            return val
     return val
 
 def clean_all():
@@ -34,7 +39,7 @@ def clean_all():
             for line in lines[1:]:
                 last_sep_idx = line.rfind(sep)
                 if last_sep_idx != -1:
-                    vol_range = line[:last_sep_idx].strip()
+                    vol_range  = line[:last_sep_idx].strip()
                     filled_vol = line[last_sep_idx+1:].strip()
                     
                     clean_vol_range = clean_range_string(vol_range)
