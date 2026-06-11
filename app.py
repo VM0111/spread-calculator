@@ -10,7 +10,6 @@ from plotly.subplots import make_subplots
 try:
     import clean_csv
     clean_csv.clean_all()
-    st.cache_data.clear()
 except ImportError:
     print("Brak pliku clean_csv.py — pomijam automatyczne czyszczenie.")
 
@@ -120,9 +119,9 @@ def load_default_ob_xauusd_futures() -> pd.DataFrame:
 def load_default_ob_xauusd_spot_a() -> pd.DataFrame:
     return pd.DataFrame({
         "OB Line": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-        "Bid Size": [1.0, 3.5, 4.5, 6.5, 9.5, 14.0, 16.5, 23.5, 35.0, 44.0],
-        "Ask Size": [1.0, 3.5, 4.5, 6.5, 9.5, 14.0, 16.5, 23.5, 35.0, 44.0],
-        "Spread":   [20.0, 44.0, 65.0, 82.0, 112.0, 145.0, 180.0, 211.0, 241.0, 270.0],
+        "Bid Size": [1.0, 3.5, 4.5, 5.5, 8.0, 10.5, 13.0, 20.0, 27.0, 34.0],
+        "Ask Size": [1.0, 3.5, 4.5, 5.5, 8.0, 10.5, 13.0, 20.0, 27.0, 34.0],
+        "Spread":   [14.0, 39.0, 64.0, 98.0, 128.0, 158.0, 188.0, 218.0, 248.0, 278.0],
     })
 
 @st.cache_data
