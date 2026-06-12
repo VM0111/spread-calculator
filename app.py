@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
+import os
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -10,6 +11,7 @@ from plotly.subplots import make_subplots
 try:
     import clean_csv
     clean_csv.clean_all()
+    st.cache_data.clear()   # ← KLUCZOWE: czyści stary cache po każdym czyszczeniu plików
 except ImportError:
     print("Brak pliku clean_csv.py — pomijam automatyczne czyszczenie.")
 
@@ -43,63 +45,70 @@ LOT_PRICE_XAGUSD = 400_000.0   # 1 Lot XAGUSD = 400 000 USD
 # ==========================================
 # 2. ŁADOWANIE CZYSTYCH DANYCH (CSV)
 # ==========================================
+def _get_mtime(path: str) -> float:
+    """Zwraca czas modyfikacji pliku — używany jako argument cache żeby wymuszać odświeżenie."""
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
 @st.cache_data
-def load_clean_csv(path: str) -> pd.DataFrame:
-    """Ładuje wstępnie wyczyszczone pliki CSV z poprawnym formatem np. 0.0 - 0.1"""
+def load_clean_csv(path: str, _mtime: float = 0.0) -> pd.DataFrame:
+    """Ładuje wstępnie wyczyszczone pliki CSV. _mtime wymusza odświeżenie cache gdy plik się zmieni."""
     try:
         with open(path, 'r', encoding='utf-8-sig') as f:
             lines = [line.strip() for line in f if line.strip()]
-            
+
         if not lines:
             return pd.DataFrame(columns=["volume_range", "filled_volume"])
-            
+
         sep = ";" if ";" in lines[0] else ","
-        
+
         data = []
         for line in lines[1:]:
             last_sep_idx = line.rfind(sep)
             if last_sep_idx != -1:
-                vol_range = line[:last_sep_idx].strip()
+                vol_range  = line[:last_sep_idx].strip()
                 filled_vol = line[last_sep_idx+1:].strip()
                 data.append({
                     "volume_range": vol_range,
                     "filled_volume": filled_vol
                 })
-                
+
         df = pd.DataFrame(data)
         if not df.empty:
             df["filled_volume"] = pd.to_numeric(df["filled_volume"], errors="coerce")
-            
+
         return df
-    except Exception as e:
+    except Exception:
         return pd.DataFrame(columns=["volume_range", "filled_volume"])
 
 
 @st.cache_data
-def load_distributions_xauusd() -> tuple[pd.DataFrame, pd.DataFrame]:
+def load_distributions_xauusd(_mtime_futures: float = 0.0, _mtime_spot: float = 0.0) -> tuple[pd.DataFrame, pd.DataFrame]:
     try:
-        df_futures = load_clean_csv("futures_distribution_clean.csv")
-        df_spot    = load_clean_csv("spot_distribution_clean.csv")
+        df_futures = load_clean_csv("futures_distribution_clean.csv", _mtime=_mtime_futures)
+        df_spot    = load_clean_csv("spot_distribution_clean.csv",    _mtime=_mtime_spot)
         for name, df in [("futures_distribution_clean.csv", df_futures), ("spot_distribution_clean.csv", df_spot)]:
             if not df.empty and ("volume_range" not in df.columns or "filled_volume" not in df.columns):
-                st.error(f"Wygenerowany plik {name} nie zawiera wymaganych kolumn.")
+                st.error(f"Plik {name} nie zawiera wymaganych kolumn.")
                 return pd.DataFrame(), pd.DataFrame()
         return df_futures, df_spot
-    except Exception as e:
+    except Exception:
         return pd.DataFrame(), pd.DataFrame()
 
 
 @st.cache_data
-def load_distributions_xagusd() -> tuple[pd.DataFrame, pd.DataFrame]:
+def load_distributions_xagusd(_mtime_futures: float = 0.0, _mtime_spot: float = 0.0) -> tuple[pd.DataFrame, pd.DataFrame]:
     try:
-        df_futures = load_clean_csv("futures_distribution_XAGUSD_clean.csv")
-        df_spot    = load_clean_csv("spot_distribution_XAGUSD_clean.csv")
+        df_futures = load_clean_csv("futures_distribution_XAGUSD_clean.csv", _mtime=_mtime_futures)
+        df_spot    = load_clean_csv("spot_distribution_XAGUSD_clean.csv",    _mtime=_mtime_spot)
         for name, df in [("futures_distribution_XAGUSD_clean.csv", df_futures), ("spot_distribution_XAGUSD_clean.csv", df_spot)]:
             if not df.empty and ("volume_range" not in df.columns or "filled_volume" not in df.columns):
-                st.error(f"Wygenerowany plik {name} nie zawiera wymaganych kolumn.")
+                st.error(f"Plik {name} nie zawiera wymaganych kolumn.")
                 return pd.DataFrame(), pd.DataFrame()
         return df_futures, df_spot
-    except Exception as e:
+    except Exception:
         return pd.DataFrame(), pd.DataFrame()
 
 
@@ -132,7 +141,6 @@ def load_default_ob_xauusd_spot_b() -> pd.DataFrame:
         "Ask Size": [1.0, 3.5, 4.5, 5.5, 8.0, 10.5, 13.0, 20.0, 27.0, 34.0],
         "Spread":   [14.0, 39.0, 64.0, 98.0, 128.0, 158.0, 188.0, 218.0, 248.0, 278.0],
     })
-
 
 # ==========================================
 # DOMYŚLNE ORDER BOOKI — XAGUSD
@@ -187,44 +195,33 @@ def validate_order_book(ob: pd.DataFrame) -> list[str]:
 
     return errors
 
+
 # ==========================================
 # 4. SILNIK KALKULACJI
 # ==========================================
 def parse_bucket_end(vol_range_str: str) -> float | None:
-    """
-    Obsługuje wszystkie warianty formatowania przedziałów:
-      - '0.0 - 0.1'      (format po clean_csv)
-      - '(0.0, 0.1]'     (format pandas interval z przecinkiem)
-      - '(0.0 0.1]'      (format pandas interval ze spacją)
-      - '0.0 0.1'        (surowy format ze spacją, bez nawiasów)
-    """
     try:
         s = str(vol_range_str).strip()
-        # Usuń nawiasy interwałowe
         s = s.replace('(', '').replace(')', '').replace('[', '').replace(']', '').strip()
-
         if ' - ' in s:
-            # Format po clean_csv: "0.0 - 0.1"
             end_str = s.split(' - ')[1].strip()
         elif ',' in s:
-            # Format pandas z przecinkiem: "0.0, 0.1"
             end_str = s.split(',')[1].strip()
         else:
-            # Format ze spacją: "0.0 0.1"
             parts = s.split()
             if len(parts) < 2:
                 return None
             end_str = parts[-1].strip()
-
         return float(end_str)
     except (IndexError, ValueError):
         return None
 
 
-def calculate_per_bucket_revenue(order_book: pd.DataFrame, volume_distribution: pd.DataFrame, lot_price: float, spread_multiplier: float = 1.0) -> pd.DataFrame:
+def calculate_per_bucket_revenue(order_book: pd.DataFrame, volume_distribution: pd.DataFrame,
+                                  lot_price: float, spread_multiplier: float = 1.0) -> pd.DataFrame:
     ob = order_book.copy()
-    ob["Ask Size"] = pd.to_numeric(ob["Ask Size"], errors="coerce")
-    ob["Spread"]   = pd.to_numeric(ob["Spread"],   errors="coerce")
+    ob["Ask Size"]     = pd.to_numeric(ob["Ask Size"], errors="coerce")
+    ob["Spread"]       = pd.to_numeric(ob["Spread"],   errors="coerce")
     ob["Cum_Ask_Size"] = ob["Ask Size"].cumsum()
 
     if "OB Line" not in ob.columns:
@@ -288,9 +285,9 @@ def calculate_fill_rate_per_line(results: pd.DataFrame, order_book: pd.DataFrame
 
     rows = []
     for line in lines:
-        count  = fill_counts[line]
-        volume = fill_volumes[line]
-        rev    = fill_revenues[line]
+        count    = fill_counts[line]
+        volume   = fill_volumes[line]
+        rev      = fill_revenues[line]
         turnover = volume * lot_price
         rpm      = (rev / turnover * 1_000_000) if turnover > 0 else 0.0
 
@@ -304,28 +301,28 @@ def calculate_fill_rate_per_line(results: pd.DataFrame, order_book: pd.DataFrame
 
     return pd.DataFrame(rows)
 
+
 # ==========================================
 # 5. SILNIK INTERFEJSU
 # ==========================================
 def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd.DataFrame,
-                     lot_price: float, default_ob_df_b: pd.DataFrame = None, spread_multiplier: float = 1.0) -> None:
+                     lot_price: float, default_ob_df_b: pd.DataFrame = None,
+                     spread_multiplier: float = 1.0) -> None:
 
     TABLE_HEIGHT = 300
     col_left, col_right = st.columns(2)
-    
-    # Formatowanie kolumn dla głównych tabel (Wyniki A i Wyniki B)
+
     results_format_dict = {
-        "Filled_Volume": "{:,.2f}",      # Separatory tysięcy + 2 miejsca po przecinku
-        "Assigned_Spread": "{:,.0f}",    # Brak miejsc po przecinku
-        "Turnover_USD": "{:,.2f}",       # Separatory tysięcy + 2 miejsca po przecinku
-        "Revenue_USD": "{:,.2f}",        # Separatory tysięcy + 2 miejsca po przecinku
-        "RPM": "{:,.0f}"                 # Brak miejsc po przecinku (z separatorami dla czytelności większych kwot)
+        "Filled_Volume":   "{:,.2f}",
+        "Assigned_Spread": "{:,.0f}",
+        "Turnover_USD":    "{:,.2f}",
+        "Revenue_USD":     "{:,.2f}",
+        "RPM":             "{:,.0f}",
     }
 
-    # Formatowanie kolumn dla tabel Fill Rate
     fill_rate_format_dict = {
-        "Fill Volume": "{:,.2f}",        # Separatory tysięcy + 2 miejsca po przecinku
-        "RPM": "{:,.0f}"                 # Brak miejsc po przecinku
+        "Fill Volume": "{:,.2f}",
+        "RPM":         "{:,.0f}",
     }
 
     # --- Scenariusz A (Current) ---
@@ -364,12 +361,12 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             f"<span style='color:#888;font-size:0.9em;margin-left:10px;'>| RPM: <b>${rpm_a:,.0f}</b></span></div>",
             unsafe_allow_html=True,
         )
-        
+
         st.dataframe(
-            results_a.style.format(results_format_dict), 
-            use_container_width=True, 
-            hide_index=True, 
-            height=TABLE_HEIGHT
+            results_a.style.format(results_format_dict),
+            use_container_width=True,
+            hide_index=True,
+            height=TABLE_HEIGHT,
         )
 
     # --- Scenariusz B (Optimized) ---
@@ -393,7 +390,6 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             return
 
         results_b = calculate_per_bucket_revenue(edited_ob_b, vol_dist_df, lot_price, spread_multiplier)
-
         if results_b.empty:
             st.warning("Brak wyników dla Scenariusza B. Sprawdź dane wejściowe.")
             return
@@ -402,12 +398,10 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
         total_turnover_b = results_b["Turnover_USD"].sum()
         rpm_b            = (total_rev_b / total_turnover_b * 1_000_000) if total_turnover_b > 0 else 0.0
 
-        # Wyliczanie różnicy w dolarach
         diff_vs_a  = total_rev_b - total_rev_a
         diff_color = "#00CC96" if diff_vs_a >= 0 else "#EF553B"
         diff_sign  = "+" if diff_vs_a >= 0 else ""
 
-        # Wyliczanie różnicy w procentach
         if total_rev_a > 0:
             pct_diff_vs_a = (diff_vs_a / total_rev_a) * 100
         elif total_rev_a == 0 and total_rev_b > 0:
@@ -429,18 +423,18 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
             f"<span style='color:{rpm_color};font-size:0.8em;font-weight:bold;'>({rpm_sign}${diff_rpm:,.0f})</span></div>",
             unsafe_allow_html=True,
         )
-        
+
         st.dataframe(
-            results_b.style.format(results_format_dict), 
-            use_container_width=True, 
-            hide_index=True, 
-            height=TABLE_HEIGHT
+            results_b.style.format(results_format_dict),
+            use_container_width=True,
+            hide_index=True,
+            height=TABLE_HEIGHT,
         )
 
     st.divider()
 
     # ==========================================
-    # SEKCJA: FILL RATE PER LINE
+    # FILL RATE PER LINE
     # ==========================================
     st.header(f"Fill Rate per OB Line — {tab_name}")
 
@@ -451,78 +445,41 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
 
     with col_fill_left:
         st.markdown("**Scenariusz A (Current)**")
-        st.dataframe(
-            fill_a.style.format(fill_rate_format_dict), 
-            use_container_width=True, 
-            hide_index=True
-        )
+        st.dataframe(fill_a.style.format(fill_rate_format_dict), use_container_width=True, hide_index=True)
 
     with col_fill_right:
         st.markdown("**Scenariusz B (Optimized)**")
-        st.dataframe(
-            fill_b.style.format(fill_rate_format_dict), 
-            use_container_width=True, 
-            hide_index=True
-        )
+        st.dataframe(fill_b.style.format(fill_rate_format_dict), use_container_width=True, hide_index=True)
 
     fig_fill = make_subplots(specs=[[{"secondary_y": True}]])
-
-    fig_fill.add_trace(go.Bar(
-        x=fill_a["OB Line"].astype(str),
-        y=fill_a["Fill Volume (%)"],
-        name="Fill Volume % — A (Current)",
-        marker_color="#5B9BD5",
-        opacity=0.85,
-    ), secondary_y=False)
-
-    fig_fill.add_trace(go.Bar(
-        x=fill_b["OB Line"].astype(str),
-        y=fill_b["Fill Volume (%)"],
-        name="Fill Volume % — B (Optimized)",
-        marker_color="#70AD47",
-        opacity=0.85,
-    ), secondary_y=False)
-
-    fig_fill.add_trace(go.Scatter(
-        x=fill_a["OB Line"].astype(str),
-        y=fill_a["Fill Count"],
-        name="Fill Count — A",
-        mode="lines+markers",
-        marker_color="#EF553B",
-        line=dict(width=2, dash="dot"),
-    ), secondary_y=True)
-
-    fig_fill.add_trace(go.Scatter(
-        x=fill_b["OB Line"].astype(str),
-        y=fill_b["Fill Count"],
-        name="Fill Count — B",
-        mode="lines+markers",
-        marker_color="#FFA15A",
-        line=dict(width=2, dash="dash"),
-    ), secondary_y=True)
-
+    fig_fill.add_trace(go.Bar(x=fill_a["OB Line"].astype(str), y=fill_a["Fill Volume (%)"],
+        name="Fill Volume % — A (Current)", marker_color="#5B9BD5", opacity=0.85), secondary_y=False)
+    fig_fill.add_trace(go.Bar(x=fill_b["OB Line"].astype(str), y=fill_b["Fill Volume (%)"],
+        name="Fill Volume % — B (Optimized)", marker_color="#70AD47", opacity=0.85), secondary_y=False)
+    fig_fill.add_trace(go.Scatter(x=fill_a["OB Line"].astype(str), y=fill_a["Fill Count"],
+        name="Fill Count — A", mode="lines+markers", marker_color="#EF553B",
+        line=dict(width=2, dash="dot")), secondary_y=True)
+    fig_fill.add_trace(go.Scatter(x=fill_b["OB Line"].astype(str), y=fill_b["Fill Count"],
+        name="Fill Count — B", mode="lines+markers", marker_color="#FFA15A",
+        line=dict(width=2, dash="dash")), secondary_y=True)
     fig_fill.update_layout(
         title="Udział wolumenu (%) i liczba użyć per linia OB",
-        barmode="group",
-        xaxis_title="OB Line",
-        hovermode="x unified",
+        barmode="group", xaxis_title="OB Line", hovermode="x unified",
         margin=dict(l=0, r=0, t=50, b=0),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     fig_fill.update_yaxes(title_text="Fill Volume (%)", secondary_y=False)
     fig_fill.update_yaxes(title_text="Fill Count (liczba bucketów)", secondary_y=True, showgrid=False)
-
     st.plotly_chart(fig_fill, use_container_width=True, key=f"chart_fill_{tab_name}")
 
     st.divider()
 
     # ==========================================
-    # SEKCJA: CURRENT vs OPTIMIZED — Lot Sizes & Spreads
+    # CURRENT vs OPTIMIZED — Lot Sizes & Spreads
     # ==========================================
     st.header(f"Order Book — Current vs Optimized — {tab_name}")
 
     ob_lines = edited_ob_a["OB Line"].tolist() if "OB Line" in edited_ob_a.columns else list(range(1, len(edited_ob_a) + 1))
-
     ask_a = pd.to_numeric(edited_ob_a["Ask Size"], errors="coerce").tolist()
     ask_b = pd.to_numeric(edited_ob_b["Ask Size"], errors="coerce").tolist()
     spr_a = pd.to_numeric(edited_ob_a["Spread"],   errors="coerce").tolist()
@@ -531,27 +488,14 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     n = min(len(ob_lines), len(ask_a), len(ask_b), len(spr_a), len(spr_b))
     ob_lines_str = [str(x) for x in ob_lines[:n]]
 
-    fig_ob = make_subplots(
-        rows=1, cols=2,
+    fig_ob = make_subplots(rows=1, cols=2,
         subplot_titles=("Lot Sizes: Current vs Optimized", "Spreads: Current vs Optimized"),
-        horizontal_spacing=0.10,
-    )
+        horizontal_spacing=0.10)
 
-    fig_ob.add_trace(go.Bar(
-        x=ob_lines_str,
-        y=ask_a[:n],
-        name="Current (Ask Size)",
-        marker_color="#5B9BD5",
-        opacity=0.85,
-    ), row=1, col=1)
-
-    fig_ob.add_trace(go.Bar(
-        x=ob_lines_str,
-        y=ask_b[:n],
-        name="Optimized (Ask Size)",
-        marker_color="#70AD47",
-        opacity=0.85,
-    ), row=1, col=1)
+    fig_ob.add_trace(go.Bar(x=ob_lines_str, y=ask_a[:n], name="Current (Ask Size)",
+        marker_color="#5B9BD5", opacity=0.85), row=1, col=1)
+    fig_ob.add_trace(go.Bar(x=ob_lines_str, y=ask_b[:n], name="Optimized (Ask Size)",
+        marker_color="#70AD47", opacity=0.85), row=1, col=1)
 
     fixed_lines_count = min(2, n)
     max_spr = max(max(spr_a[:n]), max(spr_b[:n])) * 1.1
@@ -559,48 +503,27 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     fig_ob.add_trace(go.Scatter(
         x=ob_lines_str[:fixed_lines_count] + ob_lines_str[:fixed_lines_count][::-1],
         y=[max_spr] * fixed_lines_count + [0] * fixed_lines_count,
-        fill="toself",
-        fillcolor="rgba(255, 182, 193, 0.25)",
-        line=dict(color="rgba(255,182,193,0)"),
-        name="Fixed (Lines 1-2)",
-        showlegend=True,
-        hoverinfo="skip",
-    ), row=1, col=2)
+        fill="toself", fillcolor="rgba(255, 182, 193, 0.25)",
+        line=dict(color="rgba(255,182,193,0)"), name="Fixed (Lines 1-2)",
+        showlegend=True, hoverinfo="skip"), row=1, col=2)
+    fig_ob.add_trace(go.Scatter(x=ob_lines_str, y=spr_a[:n], name="Current (Spread)",
+        mode="lines+markers", marker=dict(symbol="circle", size=8, color="#5B9BD5"),
+        line=dict(color="#5B9BD5", width=2)), row=1, col=2)
+    fig_ob.add_trace(go.Scatter(x=ob_lines_str, y=spr_b[:n], name="Optimized (Spread)",
+        mode="lines+markers", marker=dict(symbol="square", size=8, color="#375623"),
+        line=dict(color="#375623", width=2)), row=1, col=2)
 
-    fig_ob.add_trace(go.Scatter(
-        x=ob_lines_str,
-        y=spr_a[:n],
-        name="Current (Spread)",
-        mode="lines+markers",
-        marker=dict(symbol="circle", size=8, color="#5B9BD5"),
-        line=dict(color="#5B9BD5", width=2),
-    ), row=1, col=2)
-
-    fig_ob.add_trace(go.Scatter(
-        x=ob_lines_str,
-        y=spr_b[:n],
-        name="Optimized (Spread)",
-        mode="lines+markers",
-        marker=dict(symbol="square", size=8, color="#375623"),
-        line=dict(color="#375623", width=2),
-    ), row=1, col=2)
-
-    fig_ob.update_layout(
-        barmode="group",
-        hovermode="x unified",
-        height=420,
+    fig_ob.update_layout(barmode="group", hovermode="x unified", height=420,
         margin=dict(l=0, r=0, t=60, b=0),
-        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="right", x=1),
-    )
+        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="right", x=1))
     fig_ob.update_xaxes(title_text="OB Line", row=1, col=1)
     fig_ob.update_xaxes(title_text="OB Line", row=1, col=2)
     fig_ob.update_yaxes(title_text="Lot Capacity", row=1, col=1)
     fig_ob.update_yaxes(title_text="Spread (points)", row=1, col=2)
-
     st.plotly_chart(fig_ob, use_container_width=True, key=f"chart_ob_{tab_name}")
 
     # ==========================================
-    # SEKCJA: PRZYCHOD — porownanie A vs B
+    # POROWNANIE PRZYCHODOW A vs B
     # ==========================================
     st.header(f"Porównanie Przychodów — {tab_name}")
 
@@ -618,39 +541,19 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     results_b["Pct_Diff"] = pct_diff_list
 
     fig_rev = make_subplots(specs=[[{"secondary_y": True}]])
-
-    fig_rev.add_trace(go.Bar(
-        x=results_a["Volume_Bucket"], y=results_a["Revenue_USD"],
-        name="Scenariusz A — Current (USD)", marker_color="#EF553B",
-    ), secondary_y=False)
-
-    fig_rev.add_trace(go.Bar(
-        x=results_b["Volume_Bucket"], y=results_b["Revenue_USD"],
-        name="Scenariusz B — Optimized (USD)", marker_color="#00CC96",
-    ), secondary_y=False)
-
-    fig_rev.add_trace(go.Scatter(
-        x=results_b["Volume_Bucket"],
-        y=results_b["Pct_Diff"],
-        name="Różnica B vs A (%)",
-        mode="lines+markers",
-        marker_color="#FFA15A",
-        line=dict(width=3, dash="dot"),
-    ), secondary_y=True)
-
-    fig_rev.update_layout(
-        barmode="group",
-        xaxis_title="Przedział Wolumenu (Volume Bucket)",
-        hovermode="x unified",
-        margin=dict(l=0, r=0, t=40, b=0),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    )
+    fig_rev.add_trace(go.Bar(x=results_a["Volume_Bucket"], y=results_a["Revenue_USD"],
+        name="Scenariusz A — Current (USD)", marker_color="#EF553B"), secondary_y=False)
+    fig_rev.add_trace(go.Bar(x=results_b["Volume_Bucket"], y=results_b["Revenue_USD"],
+        name="Scenariusz B — Optimized (USD)", marker_color="#00CC96"), secondary_y=False)
+    fig_rev.add_trace(go.Scatter(x=results_b["Volume_Bucket"], y=results_b["Pct_Diff"],
+        name="Różnica B vs A (%)", mode="lines+markers", marker_color="#FFA15A",
+        line=dict(width=3, dash="dot")), secondary_y=True)
+    fig_rev.update_layout(barmode="group", xaxis_title="Przedział Wolumenu (Volume Bucket)",
+        hovermode="x unified", margin=dict(l=0, r=0, t=40, b=0),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     fig_rev.update_yaxes(title_text="Przychód (USD)", secondary_y=False)
-    fig_rev.update_yaxes(
-        title_text="Zmiana (%)", secondary_y=True,
-        showgrid=False, tickformat=".1f", ticksuffix="%",
-    )
-
+    fig_rev.update_yaxes(title_text="Zmiana (%)", secondary_y=True,
+        showgrid=False, tickformat=".1f", ticksuffix="%")
     st.plotly_chart(fig_rev, use_container_width=True, key=f"chart_rev_{tab_name}")
 
     # ==========================================
@@ -659,19 +562,16 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
     st.write("---")
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        results_a.to_excel(writer, sheet_name=f"Scenariusz A", index=False)
-        results_b.to_excel(writer, sheet_name=f"Scenariusz B", index=False)
-        fill_a.to_excel(writer,    sheet_name=f"Fill Rate A",  index=False)
-        fill_b.to_excel(writer,    sheet_name=f"Fill Rate B",  index=False)
-
-        # Aplikujemy formatowanie tysięczne i finansowe bezpośrednio do arkuszy Excel
+        results_a.to_excel(writer, sheet_name="Scenariusz A", index=False)
+        results_b.to_excel(writer, sheet_name="Scenariusz B", index=False)
+        fill_a.to_excel(writer,    sheet_name="Fill Rate A",  index=False)
+        fill_b.to_excel(writer,    sheet_name="Fill Rate B",  index=False)
         for sheet_name in writer.sheets:
             worksheet = writer.sheets[sheet_name]
             for row in worksheet.iter_rows(min_row=2):
                 for cell in row:
                     if isinstance(cell.value, (int, float)):
                         cell.number_format = '#,##0.00'
-
     output.seek(0)
 
     st.download_button(
@@ -682,12 +582,12 @@ def render_dashboard(vol_dist_df: pd.DataFrame, tab_name: str, default_ob_df: pd
         key=f"download_btn_{tab_name}",
     )
 
+
 # ==========================================
 # 6. INSTRUKCJA
 # ==========================================
 def render_instruction_tab() -> None:
     st.header("Metodologia i opis kalkulatora")
-
     st.markdown("""
 ---
 
@@ -796,7 +696,7 @@ Słupki pokazują Revenue per bucket dla Scenariusza A (czerwony) i B (zielony).
 | `Spread Multiplier XAGUSD` | 10 | Mnożnik spreadu dla XAGUSD |
 | Fixed Lines (wykres) | Linie 1-2 | Competitive tier oznaczony różowym tłem |
 | Domyślny OB XAUUSD Futures | 7 linii | Ask: 1, 6, 11, 15, 18, 19, 20 / Spready: 31, 42, 57, 84, 115, 164, 247 |
-| Domyślny OB XAUUSD Spot | 10 linii | Ask: 1, 4.5, 6, 9, 11.5, 14, 16.5, 23.5, 35, 44 / Spready: 20, 44, 65, 82, 112, 145, 180, 211, 241, 270 |
+| Domyślny OB XAUUSD Spot | 10 linii | Ask: 1, 3.5, 4.5, 5.5, 8, 10.5, 13, 20, 27, 34 / Spready: 14, 39, 64, 98, 128, 158, 188, 218, 248, 278 |
 | Domyślny OB XAGUSD Futures | 7 linii | Ask: 2, 3, 4, 6, 7, 9, 11 / Spready: 46, 52, 66, 80, 96, 110, 132 |
 | Domyślny OB XAGUSD Spot | 5 linii | Ask: 1, 2, 5, 10, 20 / Spready: 22, 40, 60, 82, 112 |
 
@@ -807,27 +707,33 @@ Słupki pokazują Revenue per bucket dla Scenariusza A (czerwony) i B (zielony).
 Przycisk "Pobierz wyniki jako Excel" na dole każdej zakładki generuje plik z czterema arkuszami: wyniki per bucket dla Scenariusza A i B oraz tabele Fill Rate dla obu scenariuszy.
     """)
 
+
 # ==========================================
 # 7. GŁÓWNA STRONA I ZAKŁADKI
 # ==========================================
 st.title("A/B Spread & Revenue Calculator")
 st.write("Wybierz instrument i rynek z zakładek poniżej, aby porównać scenariusze na odpowiednich wolumenach.")
 
+# Pobieramy mtime plików żeby cache się odświeżał przy każdej zmianie pliku
+_mtime_xau_fut  = _get_mtime("futures_distribution_clean.csv")
+_mtime_xau_spot = _get_mtime("spot_distribution_clean.csv")
+_mtime_xag_fut  = _get_mtime("futures_distribution_XAGUSD_clean.csv")
+_mtime_xag_spot = _get_mtime("spot_distribution_XAGUSD_clean.csv")
+
 # Ładowanie danych
-df_xau_futures, df_xau_spot = load_distributions_xauusd()
-df_xag_futures, df_xag_spot = load_distributions_xagusd()
+df_xau_futures, df_xau_spot = load_distributions_xauusd(_mtime_futures=_mtime_xau_fut, _mtime_spot=_mtime_xau_spot)
+df_xag_futures, df_xag_spot = load_distributions_xagusd(_mtime_futures=_mtime_xag_fut, _mtime_spot=_mtime_xag_spot)
 
 # Domyślne Order Booki — XAUUSD
-ob_xau_futures   = load_default_ob_xauusd_futures()
-ob_xau_spot_a    = load_default_ob_xauusd_spot_a()
-ob_xau_spot_b    = load_default_ob_xauusd_spot_b()
+ob_xau_futures = load_default_ob_xauusd_futures()
+ob_xau_spot_a  = load_default_ob_xauusd_spot_a()
+ob_xau_spot_b  = load_default_ob_xauusd_spot_b()
 
 # Domyślne Order Booki — XAGUSD
-ob_xag_futures   = load_default_ob_xagusd_futures()
-ob_xag_spot_a    = load_default_ob_xagusd_spot_a()
-ob_xag_spot_b    = load_default_ob_xagusd_spot_b()
+ob_xag_futures = load_default_ob_xagusd_futures()
+ob_xag_spot_a  = load_default_ob_xagusd_spot_a()
+ob_xag_spot_b  = load_default_ob_xagusd_spot_b()
 
-# Sprawdzenie dostępności danych
 xau_ok = not df_xau_futures.empty and not df_xau_spot.empty
 xag_ok = not df_xag_futures.empty and not df_xag_spot.empty
 
@@ -840,14 +746,12 @@ if xau_ok or xag_ok:
     tab_names.append("Instrukcja")
 
     tabs = st.tabs(tab_names)
-
     idx = 0
 
     if xau_ok:
         with tabs[idx]:
             render_dashboard(df_xau_futures, "Futures XAUUSD", ob_xau_futures, LOT_PRICE_XAUUSD)
         idx += 1
-
         with tabs[idx]:
             render_dashboard(df_xau_spot, "Spot XAUUSD", ob_xau_spot_a, LOT_PRICE_XAUUSD, ob_xau_spot_b)
         idx += 1
@@ -856,7 +760,6 @@ if xau_ok or xag_ok:
         with tabs[idx]:
             render_dashboard(df_xag_futures, "Futures XAGUSD", ob_xag_futures, LOT_PRICE_XAGUSD, spread_multiplier=10.0)
         idx += 1
-
         with tabs[idx]:
             render_dashboard(df_xag_spot, "Spot XAGUSD", ob_xag_spot_a, LOT_PRICE_XAGUSD, ob_xag_spot_b, spread_multiplier=10.0)
         idx += 1
